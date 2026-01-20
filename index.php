@@ -160,6 +160,16 @@
             margin-top: 4px;
         }
 
+        .stock-account {
+            color: var(--pico-primary);
+            font-size: 0.7rem;
+            margin-top: 4px;
+            padding: 2px 8px;
+            background: rgba(88, 166, 255, 0.15);
+            border-radius: 4px;
+            display: inline-block;
+        }
+
         .stock-price {
             text-align: right;
         }
@@ -504,6 +514,7 @@
                         <div>
                             <div class="stock-symbol" x-text="stock.symbol"></div>
                             <div class="stock-company" x-text="stock.company_name"></div>
+                            <div class="stock-account" x-show="stock.account" x-text="stock.account"></div>
                         </div>
                         <div class="stock-price">
                             <div class="current" x-text="stock.quote ? '$' + stock.quote.price.toFixed(2) : '—'"></div>
@@ -578,6 +589,10 @@
                     Company Name *
                     <input type="text" x-model="form.company_name" placeholder="Apple Inc." required>
                 </label>
+                <label>
+                    Account
+                    <input type="text" x-model="form.account" placeholder="e.g., Brokerage, 401k, IRA">
+                </label>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                     <label>
                         Purchase Price
@@ -644,6 +659,7 @@
                 form: {
                     symbol: '',
                     company_name: '',
+                    account: '',
                     purchase_price: '',
                     shares: '',
                     notes: ''
@@ -793,7 +809,7 @@
 
                 openAddModal() {
                     this.editingStock = null;
-                    this.form = { symbol: '', company_name: '', purchase_price: '', shares: '', notes: '' };
+                    this.form = { symbol: '', company_name: '', account: '', purchase_price: '', shares: '', notes: '' };
                     this.showModal = true;
                 },
 
@@ -802,6 +818,7 @@
                     this.form = {
                         symbol: stock.symbol,
                         company_name: stock.company_name,
+                        account: stock.account || '',
                         purchase_price: stock.purchase_price || '',
                         shares: stock.shares || '',
                         notes: stock.notes || ''

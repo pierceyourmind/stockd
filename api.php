@@ -29,8 +29,9 @@ try {
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS stocks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            symbol VARCHAR(10) NOT NULL UNIQUE,
+            symbol VARCHAR(10) NOT NULL,
             company_name VARCHAR(100) NOT NULL,
+            account VARCHAR(50),
             purchase_price DECIMAL(10,2),
             shares DECIMAL(10,4),
             notes TEXT,
@@ -38,6 +39,13 @@ try {
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ");
+
+    // Migration: add account column if it doesn't exist (ignore error if exists)
+    try {
+        $pdo->exec("ALTER TABLE stocks ADD COLUMN account VARCHAR(50)");
+    } catch (PDOException $e) {
+        // Column already exists, ignore
+    }
 } catch (PDOException $e) {
     jsonResponse(['error' => 'Database connection failed: ' . $e->getMessage()], 500);
 }
@@ -94,16 +102,17 @@ function createStock(PDO $pdo): never {
 
     $symbol = strtoupper(trim($data['symbol']));
     $companyName = trim($data['company_name']);
-    $purchasePrice = isset($data['purchase_price']) ? (float) $data['purchase_price'] : null;
-    $shares = isset($data['shares']) ? (float) $data['shares'] : null;
+    $account = isset($data['account']) && trim($data['account']) !== '' ? trim($data['account']) : null;
+    $purchasePrice = isset($data['purchase_price']) && $data['purchase_price'] !== '' ? (float) $data['purchase_price'] : null;
+    $shares = isset($data['shares']) && $data['shares'] !== '' ? (float) $data['shares'] : null;
     $notes = $data['notes'] ?? null;
 
     try {
         $stmt = $pdo->prepare("
-            INSERT INTO stocks (symbol, company_name, purchase_price, shares, notes)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO stocks (symbol, company_name, account, purchase_price, shares, notes)
+            VALUES (?, ?, ?, ?, ?, ?)
         ");
-        $stmt->execute([$symbol, $companyName, $purchasePrice, $shares, $notes]);
+        $stmt->execute([$symbol, $companyName, $account, $purchasePrice, $shares, $notes]);
 
         $id = (int) $pdo->lastInsertId();
         $stmt = $pdo->prepare("SELECT * FROM stocks WHERE id = ?");
@@ -111,9 +120,6 @@ function createStock(PDO $pdo): never {
 
         jsonResponse(['stock' => $stmt->fetch(), 'message' => 'Stock added successfully'], 201);
     } catch (PDOException $e) {
-        if (str_contains($e->getMessage(), 'UNIQUE constraint failed')) {
-            jsonResponse(['error' => 'Stock symbol already exists'], 409);
-        }
         jsonResponse(['error' => 'Failed to create stock: ' . $e->getMessage()], 500);
     }
 }
@@ -132,17 +138,18 @@ function updateStock(PDO $pdo): never {
 
     $symbol = strtoupper(trim($data['symbol']));
     $companyName = trim($data['company_name']);
-    $purchasePrice = isset($data['purchase_price']) ? (float) $data['purchase_price'] : null;
-    $shares = isset($data['shares']) ? (float) $data['shares'] : null;
+    $account = isset($data['account']) && trim($data['account']) !== '' ? trim($data['account']) : null;
+    $purchasePrice = isset($data['purchase_price']) && $data['purchase_price'] !== '' ? (float) $data['purchase_price'] : null;
+    $shares = isset($data['shares']) && $data['shares'] !== '' ? (float) $data['shares'] : null;
     $notes = $data['notes'] ?? null;
 
     try {
         $stmt = $pdo->prepare("
             UPDATE stocks
-            SET symbol = ?, company_name = ?, purchase_price = ?, shares = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+            SET symbol = ?, company_name = ?, account = ?, purchase_price = ?, shares = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         ");
-        $stmt->execute([$symbol, $companyName, $purchasePrice, $shares, $notes, $id]);
+        $stmt->execute([$symbol, $companyName, $account, $purchasePrice, $shares, $notes, $id]);
 
         if ($stmt->rowCount() === 0) {
             jsonResponse(['error' => 'Stock not found'], 404);
@@ -153,9 +160,6 @@ function updateStock(PDO $pdo): never {
 
         jsonResponse(['stock' => $stmt->fetch(), 'message' => 'Stock updated successfully']);
     } catch (PDOException $e) {
-        if (str_contains($e->getMessage(), 'UNIQUE constraint failed')) {
-            jsonResponse(['error' => 'Stock symbol already exists'], 409);
-        }
         jsonResponse(['error' => 'Failed to update stock: ' . $e->getMessage()], 500);
     }
 }
