@@ -537,7 +537,7 @@
                         </div>
                         <div class="stock-detail" x-show="stock.shares">
                             <label>Shares</label>
-                            <span x-text="parseFloat(stock.shares).toLocaleString()"></span>
+                            <span x-text="parseFloat(stock.shares).toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 4})"></span>
                         </div>
                         <div class="stock-detail" x-show="stock.purchase_price && stock.shares && stock.quote">
                             <label>Position Value</label>
