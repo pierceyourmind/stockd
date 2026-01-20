@@ -650,6 +650,8 @@
                 refreshInterval: null,
                 lastUpdate: null,
                 updateCounter: 0,
+                errorCount: 0,
+                backoffMultiplier: 1,
 
                 get isMarketOpen() {
                     const now = new Date();
@@ -689,12 +691,14 @@
                     // Clear existing interval
                     if (this.refreshInterval) clearInterval(this.refreshInterval);
 
-                    // Refresh every 10s during market hours, 60s otherwise
-                    const interval = this.isMarketOpen ? 10000 : 60000;
+                    // Base: 5s during market hours, 60s otherwise
+                    // Apply backoff multiplier if rate limited
+                    const baseInterval = this.isMarketOpen ? 5000 : 60000;
+                    const interval = baseInterval * this.backoffMultiplier;
                     this.refreshInterval = setInterval(() => this.refreshQuotes(), interval);
 
-                    // Re-check market status every minute to adjust interval
-                    setTimeout(() => this.startAutoRefresh(), 60000);
+                    // Re-check market status and backoff every 30 seconds
+                    setTimeout(() => this.startAutoRefresh(), 30000);
                 },
 
                 async loadStocks() {
@@ -713,9 +717,14 @@
                 },
 
                 async refreshQuotes() {
+                    let hadError = false;
                     const promises = this.stocks.map(async (stock) => {
                         try {
                             const res = await fetch(`api.php?action=quote&symbol=${encodeURIComponent(stock.symbol)}`);
+                            if (!res.ok) {
+                                hadError = true;
+                                return;
+                            }
                             const data = await res.json();
                             if (data.quote) {
                                 // Track if price changed for animation
@@ -729,10 +738,22 @@
                             }
                         } catch (e) {
                             console.error(`Failed to fetch quote for ${stock.symbol}`, e);
+                            hadError = true;
                         }
                     });
                     await Promise.all(promises);
-                    this.lastUpdate = Date.now();
+
+                    // Handle rate limiting with exponential backoff
+                    if (hadError) {
+                        this.errorCount++;
+                        this.backoffMultiplier = Math.min(this.backoffMultiplier * 2, 12); // Max 60s (5s * 12)
+                        console.warn(`Rate limited, backing off to ${5 * this.backoffMultiplier}s`);
+                    } else {
+                        this.errorCount = 0;
+                        this.backoffMultiplier = 1;
+                        this.lastUpdate = Date.now();
+                    }
+
                     this.updateTicker();
                 },
 
