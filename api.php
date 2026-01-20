@@ -46,6 +46,31 @@ try {
     } catch (PDOException $e) {
         // Column already exists, ignore
     }
+
+    // Migration: remove UNIQUE constraint by recreating table
+    // Check if unique constraint exists by looking at table schema
+    $schema = $pdo->query("SELECT sql FROM sqlite_master WHERE type='table' AND name='stocks'")->fetchColumn();
+    if ($schema && stripos($schema, 'UNIQUE') !== false) {
+        $pdo->exec("
+            CREATE TABLE stocks_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol VARCHAR(10) NOT NULL,
+                company_name VARCHAR(100) NOT NULL,
+                account VARCHAR(50),
+                purchase_price DECIMAL(10,2),
+                shares DECIMAL(10,4),
+                notes TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ");
+        $pdo->exec("
+            INSERT INTO stocks_new (id, symbol, company_name, account, purchase_price, shares, notes, created_at, updated_at)
+            SELECT id, symbol, company_name, account, purchase_price, shares, notes, created_at, updated_at FROM stocks
+        ");
+        $pdo->exec("DROP TABLE stocks");
+        $pdo->exec("ALTER TABLE stocks_new RENAME TO stocks");
+    }
 } catch (PDOException $e) {
     jsonResponse(['error' => 'Database connection failed: ' . $e->getMessage()], 500);
 }
