@@ -1,0 +1,40 @@
+{
+  "name": "Stockd - Stock Portfolio Tracker",
+  "short_name": "Stockd",
+  "description": "Track your stock portfolio with real-time prices, charts, news, and dividend information",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0d1117",
+  "theme_color": "#58a6ff",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect fill='%230d1117' width='512' height='512' rx='64'/%3E%3Cpath fill='%2358a6ff' d='M128 384l80-80 64 64 112-160 32 32-144 192-64-64-80 80v-64z'/%3E%3Cpath fill='%233fb950' d='M384 128l-112 160-64-64-80 80v64l80-80 64 64 144-192z' opacity='0.5'/%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect fill='%230d1117' width='192' height='192' rx='24'/%3E%3Cpath fill='%2358a6ff' d='M48 144l30-30 24 24 42-60 12 12-54 72-24-24-30 30v-24z'/%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "categories": ["finance", "business"],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Add Stock",
+      "short_name": "Add",
+      "description": "Add a new stock to your portfolio",
+      "url": "/?action=add",
+      "icons": [
+        {
+          "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'%3E%3Crect fill='%233fb950' width='96' height='96' rx='12'/%3E%3Cpath fill='white' d='M48 24v48M24 48h48' stroke='white' stroke-width='8' stroke-linecap='round'/%3E%3C/svg%3E",
+          "sizes": "96x96"
+        }
+      ]
+    }
+  ]
+}
