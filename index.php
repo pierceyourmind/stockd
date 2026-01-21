@@ -105,6 +105,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            margin-top: 56px;
             margin-bottom: 32px;
             flex-wrap: wrap;
             gap: 16px;
@@ -1232,11 +1233,12 @@
                     </div>
                     <div>
                         <div class="change" :class="bench.dayChangePercent >= 0 ? 'up' : 'down'"
+                             x-show="bench.dayChangePercent !== null"
                              x-text="(bench.dayChangePercent >= 0 ? '+' : '') + bench.dayChangePercent + '%'">
                         </div>
-                        <div class="portfolio-vs-benchmark" x-show="portfolioDayChange !== null">
-                            <span :class="portfolioDayChange > bench.dayChangePercent ? 'better' : 'worse'"
-                                  x-text="portfolioDayChange > bench.dayChangePercent ? 'You: +' + (portfolioDayChange - bench.dayChangePercent).toFixed(2) + '%' : 'You: ' + (portfolioDayChange - bench.dayChangePercent).toFixed(2) + '%'">
+                        <div class="portfolio-vs-benchmark" x-show="portfolioDayChange !== null && bench.dayChangePercent !== null">
+                            <span :class="parseFloat(portfolioDayChange) > bench.dayChangePercent ? 'better' : 'worse'"
+                                  x-text="parseFloat(portfolioDayChange) > bench.dayChangePercent ? 'You: +' + (parseFloat(portfolioDayChange) - bench.dayChangePercent).toFixed(2) + '%' : 'You: ' + (parseFloat(portfolioDayChange) - bench.dayChangePercent).toFixed(2) + '%'">
                             </span>
                         </div>
                     </div>
