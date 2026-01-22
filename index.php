@@ -28,6 +28,7 @@
         body {
             background: linear-gradient(135deg, #0d1117 0%, #161b22 50%, #0d1117 100%);
             min-height: 100vh;
+            padding-top: 60px;
         }
 
         /* Ticker Bar */
@@ -96,7 +97,6 @@
 
         /* Main Content */
         main {
-            padding-top: 80px;
             max-width: 1400px;
             margin: 0 auto;
         }
@@ -105,7 +105,6 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-top: 56px;
             margin-bottom: 32px;
             flex-wrap: wrap;
             gap: 16px;
@@ -1232,13 +1231,12 @@
                         <div class="price" x-text="'$' + bench.price.toLocaleString()"></div>
                     </div>
                     <div>
-                        <div class="change" :class="bench.dayChangePercent >= 0 ? 'up' : 'down'"
-                             x-show="bench.dayChangePercent !== null"
-                             x-text="(bench.dayChangePercent >= 0 ? '+' : '') + bench.dayChangePercent + '%'">
+                        <div class="change" :class="getBenchmarkChange(bench) >= 0 ? 'up' : 'down'"
+                             x-text="(getBenchmarkChange(bench) >= 0 ? '+' : '') + getBenchmarkChange(bench).toFixed(2) + '%'">
                         </div>
-                        <div class="portfolio-vs-benchmark" x-show="portfolioDayChange !== null && bench.dayChangePercent !== null">
-                            <span :class="parseFloat(portfolioDayChange) > bench.dayChangePercent ? 'better' : 'worse'"
-                                  x-text="parseFloat(portfolioDayChange) > bench.dayChangePercent ? 'You: +' + (parseFloat(portfolioDayChange) - bench.dayChangePercent).toFixed(2) + '%' : 'You: ' + (parseFloat(portfolioDayChange) - bench.dayChangePercent).toFixed(2) + '%'">
+                        <div class="portfolio-vs-benchmark" x-show="portfolioDayChange != null">
+                            <span :class="parseFloat(portfolioDayChange) > getBenchmarkChange(bench) ? 'better' : 'worse'"
+                                  x-text="parseFloat(portfolioDayChange) > getBenchmarkChange(bench) ? 'You: +' + (parseFloat(portfolioDayChange) - getBenchmarkChange(bench)).toFixed(2) + '%' : 'You: ' + (parseFloat(portfolioDayChange) - getBenchmarkChange(bench)).toFixed(2) + '%'">
                             </span>
                         </div>
                     </div>
@@ -1850,6 +1848,14 @@
                     } catch (e) {
                         console.error('Failed to load benchmarks', e);
                     }
+                },
+
+                getBenchmarkChange(bench) {
+                    // Use dayChangePercent if available, otherwise fall back to changePercent
+                    if (bench.dayChangePercent != null && !isNaN(bench.dayChangePercent)) {
+                        return bench.dayChangePercent;
+                    }
+                    return bench.changePercent ?? 0;
                 },
 
                 startAutoRefresh() {
