@@ -17,7 +17,7 @@ Replace SnapTrade API integration with CSV file upload for Fidelity and Schwab h
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 5: SnapTrade Removal** - Clean codebase of all SnapTrade dependencies
+- [x] **Phase 5: SnapTrade Removal** - Clean codebase of all SnapTrade dependencies ✓ 2026-02-10
 - [ ] **Phase 6: CSV Import Engine** - Upload and parse Fidelity/Schwab CSVs with auto-detection
 - [ ] **Phase 7: Re-Import & Data Management** - Update workflow with diff review and manual cost basis editing
 
@@ -40,7 +40,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans:** 1 plan
 
 Plans:
-- [ ] 05-01-PLAN.md -- Remove all SnapTrade code, files, SDK dependency, database tables, and env vars
+- [x] 05-01-PLAN.md -- Remove all SnapTrade code, files, SDK dependency, database tables, and env vars ✓
 
 ---
 
@@ -99,11 +99,11 @@ Phases execute in numeric order: 5 -> 6 -> 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 5. SnapTrade Removal | 0/1 | Not started | - |
+| 5. SnapTrade Removal | 1/1 | ✓ Complete | 2026-02-10 |
 | 6. CSV Import Engine | 0/3 | Not started | - |
 | 7. Re-Import & Data Management | 0/3 | Not started | - |
 
-**Overall:** 0/3 phases complete
+**Overall:** 1/3 phases complete
 
 ---
 
@@ -126,4 +126,4 @@ All 14 v1.1 requirements mapped to phases:
 ---
 
 *Roadmap created: 2026-02-10*
-*Last updated: 2026-02-10*
+*Last updated: 2026-02-10 (Phase 5 complete)*
