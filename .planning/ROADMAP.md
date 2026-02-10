@@ -41,11 +41,11 @@ Plans:
   1. User can click "Connect Brokerage" and complete OAuth for Fidelity, Schwab, or SoFi
   2. After connecting, each sub-account (401k, IRA, individual, etc.) appears as a separate entry
   3. Connected brokerages are listed with their connection status visible
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 02-01: SnapTrade user registration and OAuth connection flow
-- [ ] 02-02: Callback handler, connection storage, and sub-account discovery
+- [ ] 02-01-PLAN.md -- SnapTrade user registration, OAuth portal redirect, callback handler with CSRF protection, connection and account storage, listing endpoints
+- [ ] 02-02-PLAN.md -- Frontend brokerage connections UI with connect button, status display, sub-account listing, reconnect, and OAuth result messaging
 
 ### Phase 3: Holdings Sync & Display
 **Goal**: Portfolio reflects actual brokerage holdings with synced data, cost basis tracking, and clear separation between synced and watchlist stocks
