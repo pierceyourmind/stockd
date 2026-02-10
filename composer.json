@@ -1,0 +1,16 @@
+{
+    "name": "stockd/stockd",
+    "description": "Stock portfolio tracker",
+    "type": "project",
+    "authors": [
+        {
+            "name": "rob",
+            "email": "rob@humble.one"
+        }
+    ],
+    "minimum-stability": "stable",
+    "require": {
+        "vlucas/phpdotenv": "^5.0",
+        "konfig/snaptrade-php-sdk": "^2.0.160"
+    }
+}
