@@ -1,43 +1,94 @@
 # Phase 2: Brokerage Connections - Research
 
-**Researched:** 2026-02-09
-**Domain:** SnapTrade OAuth integration, brokerage connection management
-**Confidence:** HIGH
+**Researched:** 2026-02-10
+**Domain:** Plaid Investments API, brokerage OAuth connections
+**Confidence:** MEDIUM
 
 ## Summary
 
-Phase 2 implements brokerage account connections using SnapTrade's OAuth-based Connection Portal. The core pattern involves: (1) registering a SnapTrade user with an immutable userId and storing the returned userSecret, (2) generating a Connection Portal URL that expires in 5 minutes, (3) handling the OAuth flow (either via redirect or iframe), (4) listening for connection success/failure callbacks, and (5) fetching connected accounts which represent individual sub-accounts (401k, IRA, individual brokerage, etc.).
+Phase 2 implements brokerage account connections for Fidelity, Schwab, and SoFi. **CRITICAL BLOCKER DISCOVERED**: Plaid has significant limitations with the required brokerages, particularly Fidelity.
 
-SnapTrade handles all OAuth complexity, multi-factor authentication, and brokerage-specific flows through their hosted Connection Portal. After successful connection, the API provides immediate access to all sub-accounts under that brokerage login. Each connection can contain multiple accounts, and SnapTrade automatically syncs positions and balances.
+Research reveals three major findings:
 
-**Primary recommendation:** Use redirect-based flow with `immediateRedirect=true` for simplicity in Phase 2. Store userSecret encrypted or hashed in the database. Implement CSRF protection via state parameter in callback handler. Poll `listBrokerageAuthorizations` to detect disabled connections until webhook support is added in a future phase.
+1. **Fidelity no longer supports Plaid** - Fidelity discontinued Plaid support in 2023. Access to Fidelity Investments via Plaid is only "available upon request" to Plaid Account Managers, and user-facing connections through Plaid-based apps are not functional. Alternative connection methods like OFX Direct Connect or Fidelity's proprietary Fidelity Access are recommended.
 
-## Standard Stack
+2. **Charles Schwab is supported via Plaid** with OAuth integration, though there's a 5-week waiting period after Production approval and pay-as-you-go customers must explicitly request Schwab access via Dashboard ticket.
+
+3. **SoFi uses Plaid** - SoFi actively uses Plaid for account connections and the integration is working in 2026.
+
+**CRITICAL DECISION REQUIRED**: The project cannot proceed with Plaid alone due to Fidelity's lack of support. Three options:
+
+- **Option A (RECOMMENDED)**: Use **Akoya API** which is owned by Fidelity and 11 other major banks, provides API-based (not screen scraping) connections, and has direct Fidelity support. Unknown: Schwab/SoFi coverage, PHP SDK availability.
+
+- **Option B**: Use **Envestnet Yodlee** which covers 20,000+ global institutions including broad brokerage support. Has established developer portal and SDKs. Unknown: PHP SDK status, specific coverage verification needed.
+
+- **Option C**: Use **MX Platform API** which provides comprehensive investment data for 50+ account types including brokerage and retirement accounts. REST-based JSON API. Unknown: Fidelity/Schwab/SoFi specific coverage.
+
+**Primary recommendation:** HALT Phase 2 planning until provider selection is finalized. Research Akoya, Yodlee, and MX for Fidelity/Schwab/SoFi coverage and PHP integration viability. Consider multi-provider approach if necessary (Plaid for SoFi/Schwab, Akoya for Fidelity).
+
+## Plaid Investments Overview
+
+### What Plaid Provides
+
+Plaid Investments product offers access to investment account data at 2,400+ institutions in US and Canada. The API provides holdings data (positions, quantities, cost basis), security information (tickers, prices, corporate details), transaction history (up to 24 months), and account metadata with subtypes like 401k, IRA, brokerage, crypto exchange.
+
+Plaid Link handles OAuth-based connection flows where users authenticate directly with their financial institution rather than sharing credentials. After OAuth completion, a public_token is exchanged for a persistent access_token used for API calls.
+
+### Core Integration Pattern
+
+1. Backend creates link_token via `/link/token/create` with client credentials
+2. Frontend initializes Plaid Link with link_token, user selects institution and completes OAuth
+3. Backend exchanges public_token for access_token via `/item/public_token/exchange`
+4. Backend stores access_token and item_id securely (never expose client-side)
+5. Backend calls `/investments/holdings/get` or `/investments/transactions/get` for data retrieval
+6. Data refreshes daily after market close; on-demand refresh via `/investments/refresh` (add-on product)
+
+### Brokerage Coverage Status (2026)
+
+| Brokerage | Plaid Support | Status | Alternative |
+|-----------|---------------|--------|-------------|
+| **Fidelity** | NO (discontinued 2023) | "Available upon request" to Account Managers only; user connections not functional | Akoya (Fidelity-owned), OFX Direct Connect, Fidelity Access |
+| **Charles Schwab** | YES (OAuth) | Supported, 5-week wait after Production approval, requires explicit request for pay-as-you-go | Working as of 2026 |
+| **SoFi** | YES | Actively supported, SoFi uses Plaid for account linking | Working as of 2026 |
+
+**Confidence:** MEDIUM - Fidelity status verified through official Plaid docs and multiple secondary sources. Schwab status confirmed via Plaid docs. SoFi status confirmed via SoFi support docs.
+
+## Standard Stack (IF Plaid is Used)
 
 ### Core
 | Library | Version | Purpose | Why Standard |
 |---------|---------|---------|--------------|
-| konfig/snaptrade-php-sdk | ^2.0.160 | SnapTrade API client | Official PHP SDK from SnapTrade, already installed in Phase 1 |
-| vlucas/phpdotenv | ^5.0 | Environment variable management | Already installed, securely loads API credentials |
+| tomorrow-ideas/plaid-sdk-php | Latest | Community PHP SDK for Plaid API | Only mature PHP SDK; auto-updated; NOT officially supported by Plaid |
+| vlucas/phpdotenv | ^5.0 | Environment variable management | Already installed, loads Plaid credentials securely |
 | PDO SQLite | PHP builtin | Database access | Already configured with WAL mode in Phase 1 |
 
 ### Supporting
 | Library | Version | Purpose | When to Use |
 |---------|---------|---------|-------------|
-| OpenSSL / Libsodium | PHP builtin | Encrypt userSecret before storage | Optional encryption for sensitive data at rest |
-| random_bytes() | PHP builtin | Generate CSRF state tokens | Required for OAuth callback security |
+| random_bytes() | PHP builtin | Generate CSRF state tokens | Required for OAuth redirect security |
+| OpenSSL / Libsodium | PHP builtin | Encrypt access tokens before storage | Recommended for storing access_tokens at rest |
 
-### Alternatives Considered
-| Instead of | Could Use | Tradeoff |
-|------------|-----------|----------|
-| Redirect flow | Iframe embedding | Iframe keeps user in-app but requires JavaScript postMessage handling and doesn't support immediateRedirect parameter |
-| Polling for status | Webhook listeners | Webhooks are more efficient but require HMAC signature verification and public endpoint; defer to later phase |
-| Store userSecret plain | Encrypt with OpenSSL | Encryption adds security at rest but increases complexity; start plain, add encryption if needed |
+### Critical Notes
+| Issue | Details |
+|-------|---------|
+| **No Official PHP SDK** | Plaid officially supports Node, Python, Ruby, Java, Go only. PHP developers must use community SDK (TomorrowIdeas) or build raw REST API calls |
+| **Community SDK Limitations** | tomorrow-ideas/plaid-sdk-php is NOT officially supported by Plaid. No guarantees of staying current with API changes. Plaid cannot provide assistance. |
+| **RESTful Alternative** | Plaid API is JSON over HTTPS POST, so raw cURL/Guzzle integration is feasible if community SDK fails |
 
 **Installation:**
 ```bash
-# Already installed in Phase 1
-composer show konfig/snaptrade-php-sdk  # Verify 2.0.160+
+composer require tomorrow-ideas/plaid-sdk-php
+```
+
+**Initialization:**
+```php
+use TomorrowIdeas\Plaid\Plaid;
+
+$plaid = new Plaid(
+    getenv('PLAID_CLIENT_ID'),
+    getenv('PLAID_SECRET'),
+    'sandbox'  // or 'development', 'production'
+);
 ```
 
 ## Architecture Patterns
@@ -45,477 +96,446 @@ composer show konfig/snaptrade-php-sdk  # Verify 2.0.160+
 ### Recommended Project Structure
 ```
 auth/
-├── snaptrade_callback.php    # OAuth redirect handler
-├── session.php                # Existing session utilities
-api/
-├── snaptrade_register.php     # Create SnapTrade user, generate portal URL
-├── snaptrade_connections.php  # List connections and accounts
-api.php                         # Existing API router
+├── plaid_callback.php         # OAuth redirect handler (HTTPS blank page)
+├── session.php                 # Existing session utilities
+
+api.php                         # Add Plaid routes
+├── /plaid/link-token/create    # Generate link_token for frontend
+├── /plaid/public-token/exchange # Exchange public_token for access_token
+├── /plaid/accounts             # List connected accounts
+├── /plaid/holdings             # Get investment holdings
+├── /plaid/transactions         # Get investment transactions
+
+db/stocks.db
+└── Tables to add:
+    ├── plaid_items (item_id, access_token_encrypted, institution_id, created_at, disabled_at)
+    ├── plaid_accounts (account_id, item_id, name, type, subtype, last_synced_at)
 ```
 
-### Pattern 1: User Registration and Portal URL Generation
-**What:** Register user with SnapTrade, get userSecret, generate Connection Portal URL
-**When to use:** When user clicks "Connect Brokerage" button
+### Pattern 1: Link Token Creation (Backend)
+**What:** Server-side endpoint generates short-lived link_token for initializing Plaid Link on frontend
+**When to use:** Every time user wants to connect a new brokerage or re-authenticate
 **Example:**
 ```php
-// Source: SnapTrade PHP SDK GitHub README
-// https://github.com/passiv/snaptrade-php-sdk
+// Source: https://github.com/TomorrowIdeas/plaid-sdk-php (community SDK)
+// Backend route: POST /plaid/link-token/create
 
-require_once __DIR__ . '/bootstrap.php';
+use TomorrowIdeas\Plaid\Entities\User;
 
-$snaptrade = new \SnapTrade\Client(
-    clientId: $_ENV['SNAPTRADE_CLIENT_ID'],
-    consumerKey: $_ENV['SNAPTRADE_CONSUMER_KEY']
+$user = new User("user_" . $_SESSION['user_id']);
+
+$linkToken = $plaid->tokens->create(
+    client_name: "Stockd Portfolio Tracker",
+    language: "en",
+    country_codes: ["US"],
+    user: $user,
+    products: ["investments"],
+    redirect_uri: "https://yourdomain.com/auth/plaid_callback.php"
 );
 
-// Register user (do this once per user, not per connection)
-// userId must be unique and immutable (NOT email)
-$userId = 'stockd-user-1';  // Use app's internal user ID
-
-$registration = $snaptrade->authentication->registerSnapTradeUser([
-    'userId' => $userId
-]);
-
-// $registration contains userId and userSecret
-// Store userSecret in database - it's needed for all future API calls
-$userSecret = $registration['userSecret'];
-
-// Generate Connection Portal URL (expires in 5 minutes)
-$portal = $snaptrade->authentication->loginSnapTradeUser(
-    userId: $userId,
-    userSecret: $userSecret,
-    immediateRedirect: true,  // Auto-redirect after connection
-    customRedirect: 'https://yourapp.com/auth/snaptrade_callback.php'
-);
-
-// $portal['redirectURI'] is the Connection Portal URL
-// Redirect user to this URL to start OAuth flow
-header('Location: ' . $portal['redirectURI']);
+echo json_encode(['link_token' => $linkToken->link_token]);
 ```
 
-### Pattern 2: OAuth Callback Handler with CSRF Protection
-**What:** Handle redirect after user connects brokerage
-**When to use:** User returns from SnapTrade Connection Portal
+### Pattern 2: OAuth Redirect URI Setup
+**What:** Blank HTTPS page where users land after OAuth completion
+**When to use:** Required for all OAuth-based institutions (Schwab requires OAuth)
 **Example:**
 ```php
-// Source: OAuth 2.0 state parameter best practices
-// https://auth0.com/docs/secure/attack-protection/state-parameters
+// Source: https://plaid.com/docs/link/oauth/
+// File: auth/plaid_callback.php
 
-session_start();
-
-// Validate CSRF state parameter
-$returnedState = $_GET['state'] ?? '';
-$expectedState = $_SESSION['oauth_state'] ?? '';
-
-if (!hash_equals($expectedState, $returnedState)) {
-    die('CSRF validation failed');
-}
-
-// Clear used state token
-unset($_SESSION['oauth_state']);
-
-// Connection succeeded - list accounts to verify
-$snaptrade = new \SnapTrade\Client(
-    clientId: $_ENV['SNAPTRADE_CLIENT_ID'],
-    consumerKey: $_ENV['SNAPTRADE_CONSUMER_KEY']
-);
-
-$connections = $snaptrade->connections->listBrokerageAuthorizations(
-    userId: $userId,
-    userSecret: $userSecret
-);
-
-// Store connections in database
-foreach ($connections as $conn) {
-    // Each connection has: id, brokerage, name, type, disabled
-    // Store connection ID for future reference
-}
-
-// Redirect to success page
-header('Location: /dashboard.php?connected=success');
+<?php
+// This must be a real hosted HTTPS page (localhost HTTP only allowed in Sandbox)
+// Plaid Link SDK will handle detecting OAuth completion and proceeding
+// No server-side logic needed here - just a blank page
+?>
+<!DOCTYPE html>
+<html>
+<head><title>Connecting...</title></head>
+<body>
+<!-- Plaid Link handles OAuth completion automatically -->
+<script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+<script>
+// Reinitialize Link for mobile web/webview if needed
+// Desktop web Link handles this automatically
+</script>
+</body>
+</html>
 ```
 
-### Pattern 3: List Accounts (Sub-accounts)
-**What:** Fetch all accounts under all connections (401k, IRA, individual, etc.)
-**When to use:** After successful connection, to display sub-accounts
+### Pattern 3: Public Token Exchange (Backend)
+**What:** Exchange temporary public_token from Link for persistent access_token
+**When to use:** Immediately after Link onSuccess callback fires on frontend
 **Example:**
 ```php
-// Source: SnapTrade List Accounts API
-// https://docs.snaptrade.com/reference/Account%20Information/AccountInformation_listUserAccounts
+// Source: https://github.com/TomorrowIdeas/plaid-sdk-php
+// Backend route: POST /plaid/public-token/exchange
 
-$accounts = $snaptrade->accountInformation->listUserAccounts(
-    userId: $userId,
-    userSecret: $userSecret
-);
+$publicToken = $_POST['public_token'];
 
-// Each account contains:
-// - id (UUID): unique account identifier
-// - name: display name (e.g., "Fidelity 401k")
-// - number: account number (may be masked)
-// - institution_name: brokerage name
-// - brokerage_authorization: connection UUID
-// - balance: {amount, currency}
-// - sync_status: holdings and transaction sync details
-// - status: open, closed, archived
-// - is_paper: boolean for paper trading accounts
+$response = $plaid->items->exchangeToken($publicToken);
 
-foreach ($accounts as $account) {
-    echo "Account: {$account['name']} ({$account['number']})\n";
-    echo "Balance: {$account['balance']['amount']} {$account['balance']['currency']}\n";
-}
+$accessToken = $response->access_token;
+$itemId = $response->item_id;
+
+// CRITICAL: Store access_token encrypted, never expose client-side
+$encryptedToken = openssl_encrypt($accessToken, 'aes-256-gcm', getenv('ENCRYPTION_KEY'), 0, $iv, $tag);
+
+$stmt = $pdo->prepare("INSERT INTO plaid_items (item_id, access_token_encrypted, user_id) VALUES (?, ?, ?)");
+$stmt->execute([$itemId, $encryptedToken, $_SESSION['user_id']]);
+
+echo json_encode(['success' => true]);
 ```
 
-### Pattern 4: Detect and Reconnect Disabled Connections
-**What:** Poll for disabled connections and generate reconnect URL
-**When to use:** Periodically check connection health, or when user reports issues
+### Pattern 4: Fetch Accounts with Subtypes
+**What:** Retrieve all accounts from a connected Item, including subtype identification
+**When to use:** After token exchange to populate account list; periodically to refresh
 **Example:**
 ```php
-// Source: SnapTrade Fix Disabled Connections
-// https://docs.snaptrade.com/docs/fix-broken-connections
+// Source: https://plaid.com/docs/api/products/investments/
+// Backend route: GET /plaid/accounts
 
-$connections = $snaptrade->connections->listBrokerageAuthorizations(
-    userId: $userId,
-    userSecret: $userSecret
-);
+$accessToken = decryptAccessToken($userId); // retrieve from DB and decrypt
 
-foreach ($connections as $conn) {
-    if ($conn['disabled'] === true) {
-        // Connection is broken - generate reconnect URL
-        $reconnectPortal = $snaptrade->authentication->loginSnapTradeUser(
-            userId: $userId,
-            userSecret: $userSecret,
-            reconnect: $conn['id'],  // Pass connection UUID
-            immediateRedirect: true,
-            customRedirect: 'https://yourapp.com/auth/snaptrade_callback.php'
-        );
+$response = $plaid->accounts->list($accessToken);
 
-        // Redirect user to reconnect portal
-        // Portal will auto-route to reconnection flow for this brokerage
-    }
-}
-```
+foreach ($response->accounts as $account) {
+    // Account subtypes for investment accounts:
+    // '401k', 'ira', 'roth', 'brokerage', 'crypto exchange', etc.
 
-### Pattern 5: PDO Transaction with Rollback
-**What:** Use transactions when storing connections and accounts atomically
-**When to use:** When writing multiple related records (connection + accounts)
-**Example:**
-```php
-// Source: PHP PDO transaction best practices
-// https://zetcode.com/php-pdo/rollback-method/
-
-try {
-    $pdo->beginTransaction();
-
-    // Store connection
     $stmt = $pdo->prepare("
-        INSERT INTO connections (snaptrade_connection_id, brokerage_name, status)
-        VALUES (?, ?, ?)
+        INSERT INTO plaid_accounts (account_id, item_id, name, type, subtype, balance)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(account_id) DO UPDATE SET
+            name = excluded.name,
+            balance = excluded.balance,
+            last_synced_at = CURRENT_TIMESTAMP
     ");
-    $stmt->execute([$conn['id'], $conn['brokerage']['name'], 'active']);
-    $connectionId = $pdo->lastInsertId();
 
-    // Store accounts under this connection
-    foreach ($accounts as $account) {
-        if ($account['brokerage_authorization'] === $conn['id']) {
-            $stmt = $pdo->prepare("
-                INSERT INTO accounts (connection_id, snaptrade_account_id, name, number)
-                VALUES (?, ?, ?, ?)
-            ");
-            $stmt->execute([
-                $connectionId,
-                $account['id'],
-                $account['name'],
-                $account['number']
-            ]);
-        }
-    }
+    $stmt->execute([
+        $account->account_id,
+        $itemId,
+        $account->name,                    // e.g., "Fidelity 401k"
+        $account->type,                    // 'investment'
+        $account->subtype,                 // '401k', 'ira', 'brokerage'
+        $account->balances->current ?? 0
+    ]);
+}
+```
 
-    $pdo->commit();
-} catch (PDOException $e) {
-    if ($pdo->inTransaction()) {
-        $pdo->rollBack();
-    }
-    throw $e;  // Re-throw to notify caller
+### Pattern 5: Fetch Investment Holdings
+**What:** Retrieve current positions (stocks, bonds, funds) for investment accounts
+**When to use:** After account connection; periodically to sync positions; on-demand for display
+**Example:**
+```php
+// Source: https://github.com/TomorrowIdeas/plaid-sdk-php
+// Backend route: GET /plaid/holdings
+
+$accessToken = decryptAccessToken($userId);
+
+$holdings = $plaid->investments->listHoldings($accessToken);
+
+// Response contains:
+// - accounts: array of account objects
+// - holdings: array of holding objects (security_id, account_id, quantity, institution_price, cost_basis)
+// - securities: array of security objects (security_id, ticker, name, type, close_price)
+
+foreach ($holdings->holdings as $holding) {
+    // Find matching security details
+    $security = array_filter($holdings->securities, fn($s) => $s->security_id === $holding->security_id)[0];
+
+    $stmt = $pdo->prepare("
+        INSERT INTO positions (account_id, symbol, shares, cost_basis, current_price, updated_at)
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(account_id, symbol) DO UPDATE SET
+            shares = excluded.shares,
+            cost_basis = excluded.cost_basis,
+            current_price = excluded.current_price,
+            updated_at = CURRENT_TIMESTAMP
+    ");
+
+    $stmt->execute([
+        $holding->account_id,
+        $security->ticker_symbol ?? 'N/A',
+        $holding->quantity,
+        $holding->cost_basis,
+        $holding->institution_price
+    ]);
 }
 ```
 
 ### Anti-Patterns to Avoid
-- **Using email as userId:** Emails are mutable and violate SnapTrade's immutability requirement. Use internal user IDs.
-- **Skipping CSRF state validation:** OAuth callbacks without state parameter validation are vulnerable to CSRF attacks.
-- **Not checking connection disabled status:** Connections can break (expired tokens, security challenges). Poll `disabled` field and handle reconnection.
-- **Creating new connection instead of reconnecting:** Reconnecting preserves historical data and account IDs. New connections create duplicates.
-- **Storing userSecret in session only:** Sessions expire; userSecret must be in persistent storage (database) for future API calls.
+- **Exposing access_token client-side**: Access tokens are persistent credentials - NEVER send to frontend or log in plaintext
+- **Storing credentials unencrypted**: Use OpenSSL or Libsodium to encrypt access_token before storing in database
+- **Hardcoding environment strings**: Use 'sandbox' for development, 'production' for live - never hardcode
+- **Ignoring PRODUCT_NOT_READY error**: Investment data may not be immediately available; implement retry logic or webhook listeners
+- **Relying on immediate data**: Plaid refreshes investment data overnight; don't expect real-time updates without `/investments/refresh` add-on
+- **Using HTTP redirect URI in production**: OAuth redirect URIs MUST be HTTPS in production/development (only localhost HTTP allowed in sandbox)
+- **Assuming official PHP support**: No official PHP SDK exists; community SDK may lag behind API updates
 
 ## Don't Hand-Roll
 
 | Problem | Don't Build | Use Instead | Why |
 |---------|-------------|-------------|-----|
-| OAuth brokerage integration | Custom OAuth flows per brokerage | SnapTrade Connection Portal | Each brokerage has unique OAuth, MFA, and security requirements. SnapTrade handles Fidelity, Schwab, SoFi specifics. |
-| CSRF token generation | Manual random string generators | `random_bytes(32)` + `bin2hex()` | Cryptographically secure randomness prevents token prediction attacks. |
-| State parameter validation | String comparison (`==`) | `hash_equals()` | Timing-safe comparison prevents timing attacks on state validation. |
-| HMAC signature verification | Manual hash comparison | `hash_equals(hash_hmac(...), $signature)` | Webhook signatures require timing-safe verification to prevent forgery. |
-| Sub-account discovery | Screen scraping brokerage sites | SnapTrade `listUserAccounts` | Brokerages block scrapers and require OAuth. SnapTrade maintains integrations. |
+| OAuth flow management | Custom OAuth implementation for each brokerage | Plaid Link SDK | Handles institution-specific OAuth, MFA, error states; saves months of integration work per brokerage |
+| Access token refresh | Token refresh logic and storage | Plaid Items persist indefinitely | Plaid access_tokens don't expire unless user revokes; no refresh token flow needed |
+| Institution credential storage | Encrypted credential database | Plaid handles credentials | You never touch user brokerage passwords; reduces security liability |
+| Account data normalization | Custom parsers per brokerage | Plaid's unified API | Plaid normalizes 2,400+ institutions into consistent JSON schema |
+| Connection health monitoring | Polling brokerage sites | Plaid Item status + webhooks | Plaid tracks connection health, credential expiration, institution outages |
 
-**Key insight:** OAuth flows are deceptively complex. Brokerage APIs require specific redirect URIs, token exchange, refresh logic, and MFA handling. SnapTrade's Connection Portal abstracts this entirely, handling all edge cases (session timeouts, security challenges, institution-specific flows).
+**Key insight:** Brokerage integrations have institution-specific quirks (OAuth flows, MFA, data formats, rate limits). Plaid abstracts this complexity. Don't rebuild - the edge cases will consume months.
 
 ## Common Pitfalls
 
-### Pitfall 1: userSecret Exposure in Logs or URLs
-**What goes wrong:** Accidentally logging userSecret or passing it in GET parameters exposes sensitive credentials.
-**Why it happens:** Copy-pasting code from examples that use query strings, or debug logging full API responses.
-**How to avoid:** Always use POST body or headers for userSecret. Never log full responses containing userSecret. Redact in error handlers.
-**Warning signs:** `$_GET['userSecret']` in code, or `error_log(json_encode($result))` after registerSnapTradeUser.
+### Pitfall 1: Assuming Immediate Data Availability
+**What goes wrong:** Calling `/investments/holdings/get` immediately after token exchange returns `PRODUCT_NOT_READY` error
+**Why it happens:** Investment data extraction is asynchronous and may take hours on first connection
+**How to avoid:** Listen for `HISTORICAL_UPDATE` webhook or implement retry logic with exponential backoff
+**Warning signs:** Error code `PRODUCT_NOT_READY` in API responses
 
-### Pitfall 2: Connection Portal URL Expiration
-**What goes wrong:** User clicks "Connect Brokerage" button, portal URL is generated, but user doesn't complete flow within 5 minutes. URL expires, connection fails silently.
-**Why it happens:** SnapTrade portal URLs expire in 5 minutes for security. Long page load times or user hesitation causes expiration.
-**How to avoid:** Generate portal URL only when user clicks button (not on page load). Display "Link expires in 5 minutes" message. Handle expired URL errors and regenerate.
-**Warning signs:** Users report "Connection failed" or blank page when clicking old links.
+### Pitfall 2: Fidelity Connection Failure
+**What goes wrong:** Users cannot connect Fidelity accounts; Link shows error or no results
+**Why it happens:** Fidelity discontinued general Plaid support in 2023; only available via special access
+**How to avoid:** Do NOT promise Fidelity support unless you have confirmed access via Plaid Account Manager; consider alternative providers (Akoya, Yodlee)
+**Warning signs:** User reports "Can't find Fidelity" or connection fails during OAuth
 
-### Pitfall 3: Not Handling Disabled Connections
-**What goes wrong:** Brokerage connection breaks (expired token, security challenge), app continues showing stale data, sync operations fail silently.
-**Why it happens:** Access tokens expire, brokerages require periodic re-authentication. App doesn't check `disabled` status.
-**How to avoid:** Poll `listBrokerageAuthorizations` periodically (daily). Check `disabled` field. When true, prompt user to reconnect via `reconnect` parameter.
-**Warning signs:** Sync operations return 401 errors, holdings data becomes stale, users report missing accounts.
+### Pitfall 3: Missing Schwab Production Access
+**What goes wrong:** Schwab connections work in Sandbox but fail in Production
+**Why it happens:** Schwab requires explicit Production approval and 5-week waiting period; pay-as-you-go customers must file Dashboard ticket
+**How to avoid:** Request Schwab access early in development; don't launch without confirming Schwab Production access granted
+**Warning signs:** Schwab works in testing but not live environment
 
-### Pitfall 4: Using Email as userId
-**What goes wrong:** User changes email, SnapTrade userId becomes orphaned, can't access accounts.
-**Why it happens:** Email seems like natural identifier but violates immutability requirement.
-**How to avoid:** Use internal database user ID (e.g., `stockd-user-{id}`) that never changes. Document this in user registration code.
-**Warning signs:** SnapTrade API returns "user not found" after email change, or duplicate users created.
+### Pitfall 4: Relying on Community PHP SDK Updates
+**What goes wrong:** Plaid releases new API version or deprecates endpoints; community SDK doesn't update; integration breaks
+**Why it happens:** tomorrow-ideas/plaid-sdk-php is community-maintained and not guaranteed to stay current
+**How to avoid:** Monitor Plaid changelog, test API changes in Sandbox, prepare to switch to raw REST API calls if SDK lags
+**Warning signs:** Plaid deprecation notices in email; SDK throws unexpected errors
 
-### Pitfall 5: Missing CSRF State Validation
-**What goes wrong:** Attacker tricks user into connecting attacker's brokerage to victim's account via CSRF.
-**Why it happens:** OAuth callback doesn't validate state parameter, assumes all callbacks are legitimate.
-**How to avoid:** Generate random state token, store in session before redirect. Validate on callback with `hash_equals()`. Clear after use.
-**Warning signs:** Security audit flags OAuth endpoints, or callback accepts any incoming connection.
+### Pitfall 5: Unencrypted Access Token Storage
+**What goes wrong:** Database compromise exposes access_tokens, allowing attackers to read all user investment data
+**Why it happens:** Access tokens are persistent credentials with no expiration; storing plaintext is like storing passwords unhashed
+**How to avoid:** Encrypt access_tokens with OpenSSL/Libsodium before storing; use environment variable for encryption key; never log tokens
+**Warning signs:** Security audit flags plaintext sensitive data; access_tokens visible in database dumps
 
-### Pitfall 6: Confusing Connection ID vs Account ID
-**What goes wrong:** Trying to fetch holdings using connection ID instead of account ID, API returns errors.
-**Why it happens:** One connection contains multiple accounts. Connection is the brokerage login; account is the sub-account (401k, IRA).
-**How to avoid:** Use `listUserAccounts` to get individual accounts. Store both connection_id and account_id. Use account_id for holdings/positions APIs.
-**Warning signs:** API errors like "Invalid account_id" when using connection UUID.
+### Pitfall 6: Zero Balances or Missing Tickers
+**What goes wrong:** Holdings exist but show $0 balance, or security ticker is missing/null
+**Why it happens:** Timing mismatches, incomplete institution refreshes, or institution data quality issues
+**How to avoid:** Validate data completeness before display; show user-friendly messages for missing data; implement manual refresh option
+**Warning signs:** User reports "my account shows $0 but has money"; missing ticker symbols in holdings list
 
-### Pitfall 7: Rate Limit Violations on Sync
-**What goes wrong:** Syncing all users' connections simultaneously hits 250 req/min limit, returns 429 errors.
-**Why it happens:** Batch sync operations don't implement staggering or backoff.
-**How to avoid:** Sync operations should be spaced over time (queue-based). Check `X-RateLimit-Remaining` header. Implement exponential backoff on 429.
-**Warning signs:** 429 HTTP errors in logs, sync operations failing during peak times.
+### Pitfall 7: OAuth Redirect URI Mismatch
+**What goes wrong:** OAuth flow redirects to wrong URL or fails with "redirect_uri mismatch" error
+**Why it happens:** Redirect URI registered in Plaid Dashboard must exactly match URI in link_token creation
+**How to avoid:** Register all environment URIs in Dashboard (localhost for dev, production domain for live); ensure HTTPS in production
+**Warning signs:** OAuth completes but Link shows error; browser redirects to wrong domain
 
 ## Code Examples
 
-Verified patterns from official sources:
+Verified patterns from official sources and community SDK:
 
-### Client Initialization
+### Link Token Creation with Investments Product
 ```php
-// Source: SnapTrade PHP SDK GitHub
-// https://github.com/passiv/snaptrade-php-sdk
+// Source: https://github.com/TomorrowIdeas/plaid-sdk-php
+use TomorrowIdeas\Plaid\Plaid;
+use TomorrowIdeas\Plaid\Entities\User;
 
-require_once __DIR__ . '/vendor/autoload.php';
-
-$snaptrade = new \SnapTrade\Client(
-    clientId: $_ENV['SNAPTRADE_CLIENT_ID'],
-    consumerKey: $_ENV['SNAPTRADE_CONSUMER_KEY']
-);
-```
-
-### Register SnapTrade User (One-Time Setup)
-```php
-// Source: SnapTrade PHP SDK GitHub
-$result = $snaptrade->authentication->registerSnapTradeUser([
-    'userId' => 'stockd-user-1'  // Use app's internal user ID
-]);
-
-// Response: ['userId' => '...', 'userSecret' => 'adf2aa34-8219-40f7-...']
-// Store userSecret in database - it's needed for all API calls
-```
-
-### Generate Connection Portal URL
-```php
-// Source: SnapTrade loginSnapTradeUser API
-// https://docs.snaptrade.com/reference/Authentication/Authentication_loginSnapTradeUser
-
-$portal = $snaptrade->authentication->loginSnapTradeUser(
-    userId: 'stockd-user-1',
-    userSecret: 'adf2aa34-8219-40f7-...',
-    immediateRedirect: true,  // Auto-redirect after connection
-    customRedirect: 'https://yourapp.com/auth/snaptrade_callback.php',
-    connectionType: 'read'  // 'read', 'trade', or 'trade-if-available'
+$plaid = new Plaid(
+    getenv('PLAID_CLIENT_ID'),
+    getenv('PLAID_SECRET'),
+    'sandbox'
 );
 
-// Response: ['redirectURI' => 'https://...', 'sessionId' => '...']
-// Redirect user to portal: header('Location: ' . $portal['redirectURI']);
-```
+$user = new User("user_{$userId}");
 
-### List Brokerage Connections
-```php
-// Source: SnapTrade Connections API
-// https://docs.snaptrade.com/reference/Connections/Connections_listBrokerageAuthorizations
-
-$connections = $snaptrade->connections->listBrokerageAuthorizations(
-    userId: 'stockd-user-1',
-    userSecret: 'adf2aa34-8219-40f7-...'
+$linkToken = $plaid->tokens->create(
+    client_name: "Stockd Portfolio Tracker",
+    language: "en",
+    country_codes: ["US"],
+    user: $user,
+    products: ["investments"],
+    redirect_uri: "https://yourdomain.com/auth/plaid_callback.php",
+    webhook: "https://yourdomain.com/webhooks/plaid"  // optional
 );
 
-// Response: Array of connection objects
-// Each contains: id, created_date, brokerage{name, slug}, name, type, disabled
-foreach ($connections as $conn) {
-    echo "Brokerage: {$conn['brokerage']['name']}\n";
-    echo "Status: " . ($conn['disabled'] ? 'Disabled' : 'Active') . "\n";
-    echo "Connection ID: {$conn['id']}\n";
+echo json_encode(['link_token' => $linkToken->link_token]);
+```
+
+### Exchange Public Token for Access Token
+```php
+// Source: https://plaid.com/docs/api/
+$publicToken = $_POST['public_token'];
+
+$response = $plaid->items->exchangeToken($publicToken);
+
+// Store these securely - they don't expire
+$accessToken = $response->access_token;
+$itemId = $response->item_id;
+
+// Encrypt before storage
+$iv = random_bytes(16);
+$tag = '';
+$encrypted = openssl_encrypt(
+    $accessToken,
+    'aes-256-gcm',
+    getenv('ENCRYPTION_KEY'),
+    0,
+    $iv,
+    $tag
+);
+
+$combined = base64_encode($iv . $tag . $encrypted);
+
+$stmt = $pdo->prepare("INSERT INTO plaid_items (item_id, access_token_encrypted, user_id) VALUES (?, ?, ?)");
+$stmt->execute([$itemId, $combined, $_SESSION['user_id']]);
+```
+
+### Retrieve Investment Holdings
+```php
+// Source: https://github.com/TomorrowIdeas/plaid-sdk-php
+$accessToken = decryptAccessToken($userId);
+
+try {
+    $holdings = $plaid->investments->listHoldings($accessToken);
+
+    foreach ($holdings->holdings as $holding) {
+        $security = array_filter($holdings->securities, fn($s) => $s->security_id === $holding->security_id)[0] ?? null;
+
+        echo "Account: {$holding->account_id}\n";
+        echo "Symbol: {$security->ticker_symbol}\n";
+        echo "Quantity: {$holding->quantity}\n";
+        echo "Value: $" . ($holding->quantity * $holding->institution_price) . "\n";
+    }
+} catch (\Exception $e) {
+    if (strpos($e->getMessage(), 'PRODUCT_NOT_READY') !== false) {
+        // Data not yet available - retry later or wait for webhook
+        echo json_encode(['status' => 'processing']);
+    } else {
+        throw $e;
+    }
 }
 ```
 
-### List All Accounts (Sub-accounts)
-```php
-// Source: SnapTrade List Accounts API
-// https://docs.snaptrade.com/reference/Account%20Information/AccountInformation_listUserAccounts
+### Frontend Link Initialization
+```javascript
+// Source: https://plaid.com/docs/link/
+// This runs in browser after receiving link_token from backend
 
-$accounts = $snaptrade->accountInformation->listUserAccounts(
-    userId: 'stockd-user-1',
-    userSecret: 'adf2aa34-8219-40f7-...'
-);
+const linkHandler = Plaid.create({
+    token: linkToken,  // from backend
+    onSuccess: async (publicToken, metadata) => {
+        // Send public_token to backend for exchange
+        await fetch('/plaid/public-token/exchange', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({public_token: publicToken})
+        });
 
-// Response: Array of account objects across all connections
-// Each contains: id, name, number, institution_name, brokerage_authorization,
-//                balance{amount, currency}, sync_status, status, is_paper
-foreach ($accounts as $account) {
-    echo "Account: {$account['name']} ({$account['institution_name']})\n";
-    echo "Type: {$account['number']}\n";
-    echo "Balance: {$account['balance']['amount']} {$account['balance']['currency']}\n";
-    echo "Connection: {$account['brokerage_authorization']}\n";
-}
-```
+        // Reload accounts list
+        window.location.href = '/accounts';
+    },
+    onExit: (err, metadata) => {
+        if (err) console.error('Link error:', err);
+    }
+});
 
-### Generate CSRF State Token
-```php
-// Source: OAuth 2.0 state parameter best practices
-// https://auth0.com/docs/secure/attack-protection/state-parameters
-
-session_start();
-
-// Generate cryptographically secure random state
-$state = bin2hex(random_bytes(32));
-$_SESSION['oauth_state'] = $state;
-
-// Append to redirect URL (if using custom state handling)
-// Note: SnapTrade doesn't currently support state parameter passthrough
-// For now, rely on session-based tracking of pending connections
-```
-
-### Validate OAuth Callback State
-```php
-// Source: OAuth 2.0 CSRF protection
-// https://auth0.com/docs/secure/attack-protection/state-parameters
-
-session_start();
-
-$returnedState = $_GET['state'] ?? '';
-$expectedState = $_SESSION['oauth_state'] ?? '';
-
-// Use timing-safe comparison
-if (!hash_equals($expectedState, $returnedState)) {
-    http_response_code(403);
-    die('CSRF validation failed');
-}
-
-// Clear used token (single-use)
-unset($_SESSION['oauth_state']);
-
-// Continue with connection processing...
-```
-
-### Check Rate Limit Headers
-```php
-// Source: SnapTrade Rate Limiting
-// https://docs.snaptrade.com/docs/ratelimiting
-
-// SnapTrade SDK doesn't directly expose headers, but you can track limits
-// Default: 250 requests per minute (rolling 60-second window)
-// Headers returned: X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset
-
-// Implement conservative backoff when approaching limits
-// For Phase 2, simple request spacing is sufficient
-sleep(1);  // 1 second between requests = 60 req/min (well under limit)
+linkHandler.open();
 ```
 
 ## State of the Art
 
 | Old Approach | Current Approach | When Changed | Impact |
 |--------------|------------------|--------------|--------|
-| Screen scraping brokerage sites | OAuth-based API integrations | ~2020 | Brokerages deprecated screen scraping, require OAuth. SnapTrade maintains OAuth integrations for 5000+ institutions. |
-| Manual OAuth per brokerage | Unified connection portal | SnapTrade v2 (2023) | Single integration point handles all brokerages. No need to implement Fidelity OAuth, Schwab OAuth separately. |
-| Plaid for brokerage data | SnapTrade for trading + data | 2023-2024 | Plaid deprecated brokerage integrations. SnapTrade supports both read-only and trading. |
-| Session-only userSecret storage | Persistent database storage | Always | userSecret is long-lived credential (like API key). Must persist across sessions for future API calls. |
-| Iframe Connection Portal | Redirect with immediateRedirect | SnapTrade v4 portal (2024) | Iframe complicates CORS and postMessage. Redirect with auto-return is simpler for server-rendered apps. |
+| Screen scraping credentials | OAuth-based token exchange | 2020-2023 | Major brokerages (Fidelity, Schwab) require OAuth; credential storage no longer needed |
+| Plaid legacy endpoint | Plaid 2020-09-14 API version | 2020 | Breaking changes to error handling, Item structure, investment transaction schema |
+| public_key initialization | link_token initialization | 2020 | All Link flows now require server-side link_token generation |
+| Synchronous data retrieval | Asynchronous + webhooks | 2021+ | Investment data extraction moved to background; `PRODUCT_NOT_READY` error introduced |
+| Plaid + Fidelity screen scraping | Fidelity blocks Plaid | 2023 | Fidelity connections no longer functional for general Plaid customers |
 
 **Deprecated/outdated:**
-- **Plaid brokerage integrations**: Plaid sunset brokerage data access in 2024. Use SnapTrade.
-- **Screen scraping**: Illegal per brokerage ToS, unstable (sites change), blocked by security. OAuth required.
-- **Email as userId**: Never supported by SnapTrade due to immutability requirement, but common mistake.
+- **public_key parameter**: Removed; all Link sessions require link_token from `/link/token/create`
+- **Fidelity screen scraping**: Discontinued; Fidelity now requires Akoya or proprietary API
+- **Immediate holdings fetch**: Investment data is now asynchronous; check `PRODUCT_NOT_READY` or use webhooks
+
+## Alternative Providers
+
+### Akoya (RECOMMENDED for Fidelity)
+**Pros:** Owned by Fidelity + 11 major banks; API-based connections (no screen scraping); designed for open finance compliance
+**Cons:** Unknown PHP SDK status; Schwab/SoFi coverage needs verification
+**Use case:** If Fidelity is required, Akoya likely provides best access
+**More info:** https://akoya.com/ | https://docs.akoya.com/
+
+### Envestnet Yodlee
+**Pros:** 20,000+ institution coverage; established developer portal; broad brokerage support
+**Cons:** PHP SDK status unclear; may have screen scraping for some institutions
+**Use case:** Multi-institution aggregation if Akoya doesn't cover all three brokerages
+**More info:** https://developer.yodlee.com/
+
+### MX Platform API
+**Pros:** 50+ account types including brokerage/retirement; REST JSON API; comprehensive investment data
+**Cons:** Fidelity/Schwab/SoFi specific coverage needs verification
+**Use case:** Alternative if Plaid and Akoya don't meet requirements
+**More info:** https://www.mx.com/products/platform-api/ | https://docs.mx.com/
 
 ## Open Questions
 
-1. **Does SnapTrade support state parameter passthrough in Connection Portal?**
-   - What we know: Standard OAuth flows support state parameter for CSRF protection
-   - What's unclear: SnapTrade docs don't mention state parameter in loginSnapTradeUser
-   - Recommendation: For Phase 2, rely on session-based tracking (store pending connection attempt in session). Verify with SnapTrade support if custom state handling is needed.
+1. **Which provider supports all three brokerages (Fidelity, Schwab, SoFi)?**
+   - What we know: Plaid supports Schwab and SoFi but not Fidelity. Akoya is Fidelity-owned but Schwab/SoFi coverage unknown.
+   - What's unclear: Can a single provider handle all three, or is a multi-provider integration required?
+   - Recommendation: Research Akoya and Yodlee coverage for all three institutions before finalizing architecture
 
-2. **What's the exact reconnection UX flow?**
-   - What we know: Pass `reconnect` parameter with connection UUID, portal routes to brokerage-specific reconnection
-   - What's unclear: Does user need to re-enter full credentials, or just MFA? Varies by brokerage?
-   - Recommendation: Test reconnection flow with all three brokerages (Fidelity, Schwab, SoFi) in Phase 2 verification. Document UX differences.
+2. **Do alternative providers have PHP SDKs or require raw REST?**
+   - What we know: Plaid has community PHP SDK (not official). Akoya and Yodlee docs exist but PHP SDK status unclear.
+   - What's unclear: Whether PHP integration will require building custom REST client
+   - Recommendation: Evaluate raw REST API complexity as fallback; confirm SDK availability before committing
 
-3. **How are sub-account types distinguished (401k vs IRA vs individual)?**
-   - What we know: Each account has `name`, `number`, `institution_name` fields
-   - What's unclear: Is account type (401k, IRA, taxable) in a structured field, or inferred from name?
-   - Recommendation: Examine actual API responses during Phase 2 testing. May need to parse `name` field or use `number` pattern matching.
+3. **What is the cost comparison between providers?**
+   - What we know: Plaid has pay-as-you-go and subscription tiers; pricing for investment data varies
+   - What's unclear: Akoya, Yodlee, MX pricing models and whether they're viable for small-scale app
+   - Recommendation: Request pricing from all providers; factor into decision
 
-4. **Should userSecret be encrypted at rest?**
-   - What we know: SnapTrade says "store securely", uses TLS in transit, encrypts with AWS KMS on their side
-   - What's unclear: Is application-level encryption (before database) necessary for compliance?
-   - Recommendation: Start with plain storage (SQLite file is already OS-protected). Add encryption if security audit requires it. Don't over-engineer prematurely.
+4. **Can existing SnapTrade integration be salvaged?**
+   - What we know: Phase 1 installed SnapTrade SDK and created schema; SnapTrade doesn't support Fidelity or SoFi
+   - What's unclear: Whether SnapTrade should be removed entirely or kept for Schwab-only
+   - Recommendation: Remove SnapTrade if switching provider entirely; cleaner to use single provider for consistency
 
-5. **What's the polling frequency for disabled connection detection?**
-   - What we know: Webhooks are more efficient but require setup. Polling is simpler.
-   - What's unclear: How often do connections break in practice? Daily check sufficient?
-   - Recommendation: Phase 2 uses daily polling (cron job). Monitor frequency of disabled connections. Add webhooks in Phase 3+ if needed.
+5. **What is Production approval timeline for each provider?**
+   - What we know: Plaid Schwab access takes 5+ weeks after Production approval
+   - What's unclear: Akoya, Yodlee, MX approval timelines
+   - Recommendation: Start provider signup process immediately to avoid launch delays
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- SnapTrade PHP SDK GitHub README: https://github.com/passiv/snaptrade-php-sdk
-- SnapTrade API Documentation - Integrate Connection Portal: https://docs.snaptrade.com/docs/implement-connection-portal
-- SnapTrade API Documentation - loginSnapTradeUser: https://docs.snaptrade.com/reference/Authentication/Authentication_loginSnapTradeUser
-- SnapTrade API Documentation - List Accounts: https://docs.snaptrade.com/reference/Account%20Information/AccountInformation_listUserAccounts
-- SnapTrade API Documentation - List Connections: https://docs.snaptrade.com/reference/Connections/Connections_listBrokerageAuthorizations
-- SnapTrade API Documentation - Fix Disabled Connections: https://docs.snaptrade.com/docs/fix-broken-connections
-- SnapTrade API Documentation - Webhooks: https://docs.snaptrade.com/docs/webhooks
-- SnapTrade API Documentation - Rate Limiting: https://docs.snaptrade.com/docs/ratelimiting
+- [Plaid Investments API Documentation](https://plaid.com/docs/api/products/investments/) - Endpoint specifications, response schemas
+- [Plaid Investments Product Overview](https://plaid.com/docs/investments/) - Integration guide, coverage details
+- [Plaid OAuth Guide](https://plaid.com/docs/link/oauth/) - OAuth implementation requirements
+- [Plaid Error Documentation](https://plaid.com/docs/errors/) - Error codes and handling
+- [Plaid Institutions Coverage](https://plaid.com/docs/institutions/) - Institution coverage verification tools
+- [TomorrowIdeas Plaid PHP SDK](https://github.com/TomorrowIdeas/plaid-sdk-php) - Community PHP SDK documentation and code examples
+- [Plaid Official Libraries](https://plaid.com/docs/api/libraries/) - Confirmed NO official PHP SDK
 
 ### Secondary (MEDIUM confidence)
-- OAuth 2.0 State Parameters (Auth0): https://auth0.com/docs/secure/attack-protection/state-parameters
-- PHP PDO Transaction Best Practices: https://zetcode.com/php-pdo/rollback-method/
-- OWASP CSRF Prevention Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html
+- [Fidelity Plaid Disconnection - Bogleheads](https://www.bogleheads.org/forum/viewtopic.php?t=391473) - Community reports of Fidelity dropping Plaid
+- [SoFi Support: Plaid Connection](https://support.sofi.com/hc/en-us/articles/11378684962573) - SoFi confirms Plaid usage
+- [Charles Schwab Plaid Integration - Fintable](https://fintable.io/coverage/banks/United%20States/22872_charles-schwab) - Schwab Plaid coverage confirmation
+- [Plaid Launch Checklist](https://plaid.com/docs/launch-checklist/) - Production approval requirements
+- [Akoya Overview](https://akoya.com/) - Alternative provider owned by Fidelity
+- [Envestnet Yodlee Developer Portal](https://developer.yodlee.com/) - Alternative provider with broad coverage
+- [MX Platform API](https://www.mx.com/products/platform-api/) - Alternative provider for investment data
 
-### Tertiary (LOW confidence - marked for validation)
-- None - all key findings verified with official SnapTrade docs or established security sources
+### Tertiary (LOW confidence - needs verification)
+- WebSearch results indicating Fidelity-Plaid disconnect (multiple sources, not officially confirmed by Fidelity)
+- WebSearch results about Schwab OAuth wait times (needs verification via Plaid support)
 
 ## Metadata
 
 **Confidence breakdown:**
-- Standard stack: HIGH - SnapTrade PHP SDK already installed, official documentation comprehensive
-- Architecture: HIGH - Official code examples in SDK, API docs provide full request/response schemas
-- Pitfalls: MEDIUM-HIGH - Common OAuth pitfalls well-documented, SnapTrade-specific issues inferred from docs (rate limits, disabled connections) but not fully tested yet
-- Security patterns: HIGH - OAuth state parameter and CSRF protection are well-established best practices
+- Standard stack: MEDIUM - Community PHP SDK is mature but not officially supported; no guarantee of future updates
+- Architecture: MEDIUM - Plaid patterns are well-documented but Fidelity blocker creates major uncertainty
+- Brokerage coverage: MEDIUM-LOW - Schwab and SoFi confirmed working; Fidelity confirmed NOT working via general Plaid access
+- Alternative providers: LOW - Akoya, Yodlee, MX exist but specific coverage and PHP integration needs verification
 
-**Research date:** 2026-02-09
-**Valid until:** 2026-03-09 (30 days - SnapTrade API is stable, OAuth patterns are long-term standards)
+**Research date:** 2026-02-10
+**Valid until:** 2026-03-12 (30 days) - Brokerage connectivity landscape changes frequently; revalidate before production
 
-**Notes for planner:**
-- No CONTEXT.md exists for this phase - all implementation choices at Claude's discretion
-- Phase 1 already completed: SnapTrade SDK installed, database with connections/positions/sync_log tables created, test_snaptrade.php verified API connectivity
-- Existing infrastructure: PHP session-based auth, PDO with WAL mode, api.php router with auth middleware
-- Database schema already supports connections and accounts - can store connection_id, account_id, brokerage_name
-- SnapTrade userSecret must be stored in database (not just session) for persistent API access
-- Connection Portal UX decision: recommend redirect with immediateRedirect=true (simpler than iframe for PHP app)
+**CRITICAL ACTION REQUIRED:** User must decide on provider strategy before Phase 2 planning can proceed. Recommend researching Akoya API immediately.
