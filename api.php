@@ -131,6 +131,237 @@ try {
     jsonResponse(['error' => 'Database connection failed: ' . $e->getMessage()], 500);
 }
 
+// CSV Import Functions
+
+/**
+ * Clean numeric strings by removing $, %, +, commas
+ * Convert null indicators (--, n/a, N/A, empty) to null
+ */
+function cleanNumeric(?string $value): ?float {
+    if ($value === null || $value === '' || $value === '--' || strtolower(trim($value)) === 'n/a') {
+        return null;
+    }
+
+    $cleaned = preg_replace('/[\$,%+]/', '', trim($value));
+    $cleaned = str_replace(',', '', $cleaned);
+
+    return is_numeric($cleaned) ? (float) $cleaned : null;
+}
+
+/**
+ * Parse Fidelity CSV format (16 columns)
+ * Columns: Account Name/Number, Symbol, Description, Quantity, Last Price, Last Price Change,
+ *          Current Value, Today's Gain/Loss Dollar, Today's Gain/Loss Percent, Total Gain/Loss Dollar,
+ *          Total Gain/Loss Percent, Percent Of Account, Cost Basis Total, Average Cost Basis, Type, Lot Date
+ */
+function parseFidelityCSV(string $csvContent): array {
+    $lines = array_map('str_getcsv', explode("\n", trim($csvContent)));
+    $holdings = [];
+    $skipped = [];
+
+    // First row is header, skip it
+    array_shift($lines);
+
+    foreach ($lines as $row) {
+        if (count($row) < 16) {
+            continue; // Skip incomplete rows
+        }
+
+        $symbol = trim($row[1]);
+        $description = trim($row[2]);
+
+        // Skip empty symbols, pending activity, totals rows
+        if ($symbol === '' || stripos($symbol, 'Pending') !== false) {
+            continue;
+        }
+
+        // Skip cash positions (money market funds, cash)
+        if (stripos($description, 'CASH') !== false ||
+            stripos($description, 'FCASH') !== false ||
+            in_array($symbol, ['SPAXX', 'FDRXX', 'CORE'])) {
+            $skipped[] = "$symbol (money market/cash)";
+            continue;
+        }
+
+        $account = 'Fidelity ' . trim($row[0]);
+        $shares = cleanNumeric($row[3]);
+        $purchasePrice = cleanNumeric($row[13]); // Average Cost Basis
+        $companyName = $description;
+
+        // Skip if shares is 0 or null
+        if ($shares === null || $shares <= 0) {
+            continue;
+        }
+
+        $holdings[] = [
+            'symbol' => $symbol,
+            'company_name' => $companyName,
+            'shares' => $shares,
+            'purchase_price' => $purchasePrice,
+            'account' => $account,
+        ];
+    }
+
+    return [
+        'holdings' => $holdings,
+        'skipped' => $skipped,
+    ];
+}
+
+/**
+ * Parse Schwab CSV format (26+ columns with metadata and section headers)
+ * Format: Metadata lines, then per-account sections with "Account Name" header, column headers, data rows
+ * Data columns: Symbol, Description, Quantity, Price, Price Change $, Price Change %, Market Value,
+ *               Day Change $, Day Change %, Cost Basis, Gain/Loss $, Gain/Loss %, ...
+ */
+function parseSchwabCSV(string $csvContent): array {
+    $lines = array_map('str_getcsv', explode("\n", trim($csvContent)));
+    $holdings = [];
+    $skipped = [];
+    $currentAccount = null;
+    $headerFound = false;
+
+    foreach ($lines as $row) {
+        // Skip empty rows
+        if (empty($row) || (count($row) === 1 && trim($row[0]) === '')) {
+            continue;
+        }
+
+        $firstCol = trim($row[0]);
+
+        // Detect section headers (account names like "Brokerage  XXXX-1234")
+        // These are typically standalone lines before the column headers
+        if (!$headerFound && count($row) >= 1 && $firstCol !== '' && $firstCol !== 'Symbol') {
+            // Check if this looks like an account section header (not metadata, not column headers)
+            if (stripos($firstCol, 'Positions') === false &&
+                stripos($firstCol, 'Symbol') === false &&
+                !is_numeric(substr($firstCol, 0, 1))) {
+                $currentAccount = 'Schwab ' . $firstCol;
+                continue;
+            }
+        }
+
+        // Detect column header row (starts with "Symbol")
+        if ($firstCol === 'Symbol') {
+            $headerFound = true;
+            continue;
+        }
+
+        // Skip until we have a header
+        if (!$headerFound) {
+            continue;
+        }
+
+        // Data rows must have at least 26 columns
+        if (count($row) < 10) {
+            continue;
+        }
+
+        $symbol = trim($row[0]);
+        $description = trim($row[1]);
+        $quantity = cleanNumeric($row[2]);
+        $costBasis = cleanNumeric($row[9]); // Total cost basis
+
+        // Skip empty symbols, totals, cash positions
+        if ($symbol === '' ||
+            stripos($symbol, 'Account Total') !== false ||
+            stripos($description, 'Cash & Cash Investments') !== false ||
+            $quantity === null ||
+            $quantity <= 0) {
+            if ($symbol !== '') {
+                $skipped[] = "$symbol (cash/total/zero quantity)";
+            }
+            continue;
+        }
+
+        // Calculate purchase price (cost basis per share)
+        $purchasePrice = null;
+        if ($costBasis !== null && $quantity > 0) {
+            $purchasePrice = $costBasis / $quantity;
+        }
+
+        // Use current account or default
+        $account = $currentAccount ?? 'Schwab Account';
+
+        $holdings[] = [
+            'symbol' => $symbol,
+            'company_name' => $description,
+            'shares' => $quantity,
+            'purchase_price' => $purchasePrice,
+            'account' => $account,
+        ];
+    }
+
+    return [
+        'holdings' => $holdings,
+        'skipped' => $skipped,
+    ];
+}
+
+/**
+ * Auto-detect broker format and parse CSV
+ * Returns: ['broker' => 'fidelity'|'schwab', 'holdings' => [...], 'skipped' => [...]]
+ * Or: ['error' => 'description'] on failure
+ */
+function parseCSV(string $csvContent): array {
+    if (empty(trim($csvContent))) {
+        return ['error' => 'CSV content is empty'];
+    }
+
+    $lines = explode("\n", $csvContent);
+
+    // Auto-detect broker
+    $firstLines = array_slice($lines, 0, 5);
+    $isFidelity = false;
+    $isSchwab = false;
+
+    foreach ($firstLines as $line) {
+        // Fidelity: First row is header with "Account Name/Number"
+        if (stripos($line, 'Account Name/Number') !== false) {
+            $isFidelity = true;
+            break;
+        }
+
+        // Schwab: Has metadata lines like "Positions for All-Accounts" or section headers
+        if (stripos($line, 'Positions for') !== false ||
+            stripos($line, 'as of') !== false) {
+            $isSchwab = true;
+        }
+    }
+
+    // If not detected yet, try counting columns in first data row
+    if (!$isFidelity && !$isSchwab) {
+        foreach ($lines as $line) {
+            $row = str_getcsv($line);
+            if (count($row) >= 16 && stripos($row[0], 'Account') !== false) {
+                $isFidelity = true;
+                break;
+            } elseif (count($row) >= 26) {
+                $isSchwab = true;
+                break;
+            }
+        }
+    }
+
+    if ($isFidelity) {
+        $result = parseFidelityCSV($csvContent);
+        return [
+            'broker' => 'fidelity',
+            'holdings' => $result['holdings'],
+            'skipped' => $result['skipped'],
+        ];
+    } elseif ($isSchwab) {
+        $result = parseSchwabCSV($csvContent);
+        return [
+            'broker' => 'schwab',
+            'holdings' => $result['holdings'],
+            'skipped' => $result['skipped'],
+        ];
+    } else {
+        return ['error' => 'Unable to detect broker format. Supported formats: Fidelity, Schwab'];
+    }
+}
+
 // Routing
 $action = $_GET['action'] ?? '';
 
