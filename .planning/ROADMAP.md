@@ -37,10 +37,10 @@ Decimal phases appear between their surrounding integers in numeric order.
 3. Database contains no brokerage_connections or snaptrade_* tables
 4. App continues to function with existing manual stock entry and auth gate
 
-**Plans:** TBD
+**Plans:** 1 plan
 
 Plans:
-- [ ] 05-01: Remove SnapTrade code, uninstall SDK, drop database tables
+- [ ] 05-01-PLAN.md -- Remove all SnapTrade code, files, SDK dependency, database tables, and env vars
 
 ---
 
