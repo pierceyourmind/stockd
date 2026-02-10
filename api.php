@@ -30,6 +30,11 @@ try {
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
     ]);
 
+    // Enable WAL mode for concurrent read/write access
+    $pdo->exec('PRAGMA journal_mode=WAL');
+    // Wait up to 5 seconds for locks instead of failing immediately
+    $pdo->exec('PRAGMA busy_timeout=5000');
+
     // Create table if not exists
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS stocks (
@@ -113,6 +118,48 @@ try {
             dividend_type VARCHAR(20) DEFAULT 'regular',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (stock_id) REFERENCES stocks(id) ON DELETE CASCADE
+        )
+    ");
+
+    // Create SnapTrade tables
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS connections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            snaptrade_connection_id VARCHAR(100) UNIQUE NOT NULL,
+            brokerage_name VARCHAR(100) NOT NULL,
+            account_name VARCHAR(100),
+            status VARCHAR(20) DEFAULT 'active',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            last_synced_at DATETIME
+        )
+    ");
+
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS positions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            connection_id INTEGER NOT NULL,
+            security_id VARCHAR(100),
+            cusip VARCHAR(20),
+            symbol VARCHAR(20) NOT NULL,
+            quantity DECIMAL(10,4) NOT NULL,
+            average_purchase_price DECIMAL(10,2),
+            current_price DECIMAL(10,2),
+            cost_basis_source VARCHAR(20) DEFAULT 'brokerage',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE
+        )
+    ");
+
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS sync_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            connection_id INTEGER,
+            status VARCHAR(20) NOT NULL,
+            holdings_count INTEGER,
+            error_message TEXT,
+            synced_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE SET NULL
         )
     ");
 } catch (PDOException $e) {
