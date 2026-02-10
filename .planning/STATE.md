@@ -2,19 +2,17 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-09)
+See: .planning/PROJECT.md (updated 2026-02-10)
 
-**Core value:** Brokerage accounts are the source of truth for holdings -- stocks sync automatically so the portfolio always reflects what you actually own.
-**Current focus:** Phase 2 - Brokerage Connections
+**Core value:** Portfolio data stays current through simple CSV re-imports from brokers, with manual entry available for any stock.
+**Current focus:** Milestone v1.1 — CSV Portfolio Import
 
 ## Current Position
 
-Phase: 2 of 4 (Brokerage Connections)
-Plan: Phase 2 requires replanning
-Status: BLOCKED — Provider change (SnapTrade → Plaid)
-Last activity: 2026-02-10 -- Phase 2 execution paused: SnapTrade doesn't support Fidelity or SoFi; switching to Plaid
-
-Progress: [████░░░░░░] 25.0%
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-02-10 — Milestone v1.1 started
 
 ## Performance Metrics
 
@@ -32,7 +30,7 @@ Progress: [████░░░░░░] 25.0%
 
 **Recent Trend:**
 - Last 5 plans: 105s, 720s, 169s
-- Trend: Accelerating, Phase 2 in progress
+- Trend: Accelerating
 
 *Updated after each plan completion*
 
@@ -51,37 +49,25 @@ Progress: [████░░░░░░] 25.0%
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- [Roadmap]: Security (authentication) must come before any SnapTrade integration -- public Cloudflare Tunnel with financial data requires auth gate
-- [Roadmap]: Stale-first display pattern chosen over sync-on-load to avoid 10-30s page hangs
-- [Phase 01-security-sdk-foundation]: Use PHP native sessions with secure cookie flags (Strict SameSite, HttpOnly, Secure)
-- [Phase 01-security-sdk-foundation]: Implement temporary .env parser in bootstrap.php until phpdotenv is installed in Plan 02
-- [Phase 01-security-sdk-foundation]: Session ID regeneration every 15 minutes for security
-- [Phase 01-security-sdk-foundation]: API requests return 401 JSON, page requests redirect to login
-- [Phase 01-security-sdk-foundation]: OPTIONS preflight requests bypass authentication to support CORS
-- [Phase 01-security-sdk-foundation Plan 02]: Use phpdotenv safeLoad() instead of load() to prevent crash when .env missing
-- [Phase 01-security-sdk-foundation Plan 02]: SQLite WAL mode with 5-second busy timeout for concurrent access
-- [Phase 01-security-sdk-foundation Plan 02]: CLI verification script pattern for API connectivity testing
-- [Phase 01-security-sdk-foundation Plan 02]: SnapTrade schema uses ON DELETE CASCADE for connections to auto-clean orphaned positions
-- [Phase 02-brokerage-connections Plan 01]: Use single SnapTrade user per app instance for simplified registration flow
-- [Phase 02-brokerage-connections Plan 01]: Store CSRF state in PHP session for secure OAuth validation
-- [Phase 02-brokerage-connections Plan 01]: Support both object and array SDK responses for version compatibility
-- [Phase 02-brokerage-connections Plan 01]: Use INSERT OR REPLACE for idempotent callback handling on re-authentication
+- [v1.1]: CSV import replaces SnapTrade/Plaid — zero API dependencies
+- [v1.1]: Manual stock entry available for all stocks (not watchlist-only)
+- [v1.1]: Re-import flags removed stocks for review instead of auto-deleting
+- [v1.1]: SoFi deferred — no holdings CSV export available
+- [v1.0 Phase 01]: Use PHP native sessions with secure cookie flags (Strict SameSite, HttpOnly, Secure)
+- [v1.0 Phase 01]: phpdotenv safeLoad() for .env handling
+- [v1.0 Phase 01]: SQLite WAL mode with 5-second busy timeout
 
 ### Pending Todos
 
-None yet.
+- Remove all SnapTrade code before starting CSV import work
 
 ### Blockers/Concerns
 
-- **BLOCKING**: SnapTrade doesn't support Fidelity or SoFi. Only Schwab available. Switching to Plaid.
-- SnapTrade test/sandbox credentials cannot connect real brokerages
-- SameSite cookie changed from Strict to Lax (required for OAuth redirect flows)
-- Research flag: Symbol normalization rules need validation against real API responses during Phase 3
-- SDK calling pattern: SnapTrade PHP SDK uses flattened named params, not body objects (discovered during debugging)
+None currently.
 
 ## Session Continuity
 
 Last session: 2026-02-10
-Stopped at: Phase 2 execution paused — provider change required (SnapTrade → Plaid)
-Next step: Replan Phase 2 with Plaid integration. Clean up SnapTrade code from Phase 1.
-Resume: /gsd:plan-phase 2 (after clearing context)
+Stopped at: Defining v1.1 requirements
+Next step: Complete requirements definition, then create roadmap
+Resume: /gsd:new-milestone (in progress)

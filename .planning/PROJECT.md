@@ -2,11 +2,11 @@
 
 ## What This Is
 
-A personal stock portfolio tracker that automatically syncs holdings from Fidelity, Schwab, and SoFi brokerage accounts via SnapTrade. Built as a PHP/Alpine.js web app running locally with a Cloudflare Tunnel for broker OAuth connectivity. Shows real-time quotes, gain/loss calculations, charts, alerts, and benchmarks — all driven by actual brokerage data.
+A personal stock portfolio tracker that imports holdings from Fidelity and Schwab via CSV upload. Built as a PHP/Alpine.js web app running locally. Shows real-time quotes, gain/loss calculations, charts, alerts, and benchmarks — combining imported brokerage data with manually entered stocks.
 
 ## Core Value
 
-Brokerage accounts are the source of truth for holdings — stocks sync automatically on page load so the portfolio always reflects what you actually own.
+Portfolio data stays current through simple CSV re-imports from brokers, with manual entry available for any stock — no API keys, no OAuth, no third-party dependencies.
 
 ## Requirements
 
@@ -32,54 +32,60 @@ Brokerage accounts are the source of truth for holdings — stocks sync automati
 
 <!-- Current scope. Building toward these. -->
 
-- [ ] Connect Fidelity account(s) via SnapTrade OAuth
-- [ ] Connect Schwab account(s) via SnapTrade OAuth
-- [ ] Connect SoFi account(s) via SnapTrade OAuth
-- [ ] Auto-sync holdings on page load from connected brokers
-- [ ] Display each sub-account separately (e.g., Fidelity 401k, Fidelity Roth IRA)
-- [ ] Remove sold stocks automatically when no longer in broker holdings
-- [ ] Resolve duplicates on first sync (match existing stocks to synced holdings)
-- [ ] Prompt user to enter cost basis manually when broker doesn't provide it
-- [ ] Restrict manual stock entry to watchlist-only (holdings come from brokers)
-- [ ] Manage connected broker accounts (connect, disconnect, view status)
+- [ ] Remove all SnapTrade code, dependencies, and database tables
+- [ ] Import Fidelity positions CSV (16-column format with cost basis)
+- [ ] Import Schwab positions CSV (26-column sectioned format with cost basis)
+- [ ] Auto-detect broker format on upload
+- [ ] Display imported holdings by account (e.g., Fidelity 401k, Schwab IRA)
+- [ ] Flag stocks missing from re-import for user review before removal
+- [ ] Use cost basis from CSV for gain/loss calculations
+- [ ] Keep manual stock entry available for all stocks (not watchlist-only)
 
 ### Out of Scope
 
 <!-- Explicit boundaries. Includes reasoning to prevent re-adding. -->
 
-- Trading via SnapTrade — this is a tracker, not a trading platform
-- Multi-user / authentication — single-user personal tool
-- Plaid integration — SnapTrade covers all three brokers at no cost
-- Direct broker APIs — SnapTrade abstracts broker differences
-- Automated background sync (cron/scheduler) — page-load sync is sufficient
-- CSV/OFX import from brokers — SnapTrade replaces manual import
+- Trading — this is a tracker, not a trading platform
+- Multi-user / authentication beyond basic auth — single-user personal tool
+- SnapTrade / Plaid / direct broker APIs — CSV import is simpler and has no cost or API dependency
+- SoFi import — SoFi doesn't export holdings CSV; deferred until they add it or an alternative emerges
+- Automated background sync — CSV import is user-initiated
+- Transaction history import — positions snapshot is sufficient; reconstructing from trades is fragile
+
+## Current Milestone: v1.1 CSV Portfolio Import
+
+**Goal:** Replace SnapTrade API integration with simple CSV file upload for Fidelity and Schwab holdings.
+
+**Target features:**
+- CSV import with auto-detection of Fidelity vs Schwab format
+- Account-level organization from CSV data
+- Re-import with diff review (flag removed stocks)
+- SnapTrade code cleanup
 
 ## Context
 
-Stockd is an existing, working stock portfolio tracker. The current codebase is a monolithic two-file PHP app (~845 lines backend, ~2,614 lines frontend) with SQLite storage and Yahoo Finance for market data. It already has a mature UI with stock cards, charts, alerts, benchmarks, dividends, and PWA support.
+Stockd is an existing, working stock portfolio tracker. The current codebase is a monolithic two-file PHP app (~845 lines backend, ~2,614 lines frontend) with SQLite storage and Yahoo Finance for market data. It already has a mature UI with stock cards, charts, alerts, benchmarks, dividends, and PWA support. Phase 1 (v1.0) added session-based authentication.
 
-The next milestone adds automated brokerage sync via SnapTrade, shifting the app from manual stock entry to broker-driven portfolio management. Existing stocks will be preserved and matched during the first sync.
+The v1.1 milestone pivots from SnapTrade API sync to CSV-based import after discovering SnapTrade doesn't support Fidelity or SoFi. CSV import is simpler (no API keys, no OAuth, no third-party dependencies) and covers the two brokers that matter most.
 
-**SnapTrade integration details:**
-- Free tier supports up to 5 brokerage connections (we need 3)
-- OAuth flow requires a publicly reachable redirect URL
-- Cloudflare Tunnel provides HTTPS access to the local PHP server
-- SnapTrade returns holdings with positions, balances, and (sometimes) cost basis
-- Each broker connection exposes sub-accounts (401k, IRA, individual, etc.)
+**CSV format details:**
+- Fidelity: 16-column positions CSV, includes cost basis (total + per share), multi-account in single file
+- Schwab: 26-column positions CSV with metadata header and section separators per account, includes cost basis
+- Both use `$` and `%` symbols in numeric values that need stripping
+- SoFi: Does not export positions CSV (deferred)
 
-**Existing codebase concerns (from codebase audit):**
-- No caching of external API responses (relevant for sync frequency)
-- Synchronous PHP execution (sync operations may be slow)
-- No authentication (acceptable for single-user)
-- Yahoo Finance API rate limiting (existing issue, unrelated to sync)
+**Existing codebase concerns:**
+- SnapTrade code from Phase 1 (SDK, tables, routes, callback) needs full removal
+- Auth gate from Phase 1 is useful and stays
+- Yahoo Finance API rate limiting (existing issue, unrelated to import)
 
 ## Constraints
 
 - **Tech stack**: PHP 8+ backend, Alpine.js frontend, SQLite — maintain existing stack
-- **Hosting**: Local PHP server + Cloudflare Tunnel for OAuth redirect
-- **Cost**: SnapTrade free tier only (max 5 broker connections)
-- **Single-user**: No multi-tenant concerns, no auth required
-- **Broker coverage**: Must support Fidelity, Schwab, and SoFi specifically
+- **Hosting**: Local PHP server (Cloudflare Tunnel no longer needed — no OAuth)
+- **Cost**: Zero — no API keys or paid services
+- **Single-user**: No multi-tenant concerns, basic auth already in place
+- **Broker coverage**: Fidelity and Schwab via CSV (SoFi deferred)
 
 ## Key Decisions
 
@@ -87,13 +93,13 @@ The next milestone adds automated brokerage sync via SnapTrade, shifting the app
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| SnapTrade over Plaid | Free tier covers all 3 brokers; Plaid costs ~$100/mo for production | — Pending |
-| SnapTrade over direct broker APIs | Single API for all brokers vs maintaining 3 separate integrations | — Pending |
-| Sync on page load (not background) | Simplicity; no cron/scheduler needed; data is fresh when you look at it | — Pending |
-| Holdings from brokers only | Cleaner mental model; manual entry reserved for watchlist | — Pending |
-| Auto-remove sold stocks | Broker is source of truth; no stale positions cluttering the view | — Pending |
-| Manual cost basis fallback | Not all brokers provide cost basis; user fills gaps to preserve gain/loss tracking | — Pending |
-| Cloudflare Tunnel for OAuth | Avoids hosting costs; tunnel only needed during broker connection flow | — Pending |
+| SnapTrade over Plaid | Free tier covers all 3 brokers; Plaid costs ~$100/mo for production | ⚠️ Revisit — SnapTrade doesn't support Fidelity/SoFi |
+| SnapTrade over direct broker APIs | Single API for all brokers vs maintaining 3 separate integrations | ⚠️ Revisit — pivoting to CSV import |
+| CSV import over SnapTrade/Plaid | Zero cost, no API dependencies, no OAuth complexity; Fidelity and Schwab both export positions CSV | — Pending |
+| Manual entry for all stocks | More flexible than watchlist-only; users can add stocks from any source alongside CSV imports | — Pending |
+| Flag removed stocks on re-import | Better UX than auto-remove; user reviews what changed before confirming deletions | — Pending |
+| SoFi deferred | SoFi doesn't export holdings CSV; no clean way to import without API | — Pending |
+| Keep auth gate from v1.0 | Session-based login is useful regardless of sync method; already built and working | ✓ Good |
 
 ---
-*Last updated: 2026-02-09 after initialization*
+*Last updated: 2026-02-10 after v1.1 milestone start*
