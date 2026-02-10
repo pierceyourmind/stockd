@@ -121,75 +121,12 @@ try {
         )
     ");
 
-    // Create SnapTrade tables
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS connections (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            snaptrade_connection_id VARCHAR(100) UNIQUE NOT NULL,
-            brokerage_name VARCHAR(100) NOT NULL,
-            account_name VARCHAR(100),
-            status VARCHAR(20) DEFAULT 'active',
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            last_synced_at DATETIME
-        )
-    ");
-
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS positions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            connection_id INTEGER NOT NULL,
-            security_id VARCHAR(100),
-            cusip VARCHAR(20),
-            symbol VARCHAR(20) NOT NULL,
-            quantity DECIMAL(10,4) NOT NULL,
-            average_purchase_price DECIMAL(10,2),
-            current_price DECIMAL(10,2),
-            cost_basis_source VARCHAR(20) DEFAULT 'brokerage',
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE
-        )
-    ");
-
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS sync_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            connection_id INTEGER,
-            status VARCHAR(20) NOT NULL,
-            holdings_count INTEGER,
-            error_message TEXT,
-            synced_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE SET NULL
-        )
-    ");
-
-    // Create SnapTrade users table (stores the single SnapTrade user registration)
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS snaptrade_users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            snaptrade_user_id VARCHAR(100) UNIQUE NOT NULL,
-            user_secret VARCHAR(255) NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    ");
-
-    // Create accounts table (sub-accounts under connections -- 401k, IRA, individual, etc.)
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS accounts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            connection_id INTEGER NOT NULL,
-            snaptrade_account_id VARCHAR(100) UNIQUE NOT NULL,
-            name VARCHAR(100),
-            account_number VARCHAR(50),
-            institution_name VARCHAR(100),
-            balance_amount DECIMAL(10,2),
-            balance_currency VARCHAR(10) DEFAULT 'USD',
-            status VARCHAR(20) DEFAULT 'open',
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE
-        )
-    ");
+    // Drop SnapTrade tables (one-time migration)
+    $pdo->exec("DROP TABLE IF EXISTS connections");
+    $pdo->exec("DROP TABLE IF EXISTS positions");
+    $pdo->exec("DROP TABLE IF EXISTS sync_log");
+    $pdo->exec("DROP TABLE IF EXISTS snaptrade_users");
+    $pdo->exec("DROP TABLE IF EXISTS accounts");
 } catch (PDOException $e) {
     jsonResponse(['error' => 'Database connection failed: ' . $e->getMessage()], 500);
 }
@@ -213,9 +150,6 @@ match ($action) {
     'benchmark' => getBenchmark(),
     'dividends' => getDividends($pdo),
     'export' => exportData($pdo),
-    'snaptradeConnect' => snaptradeConnect($pdo),
-    'snaptradeConnections' => snaptradeConnections($pdo),
-    'snaptradeAccounts' => snaptradeAccounts($pdo),
     default => jsonResponse(['error' => 'Invalid action'], 400),
 };
 
@@ -224,28 +158,6 @@ function jsonResponse(array $data, int $status = 200): never {
     http_response_code($status);
     echo json_encode($data);
     exit;
-}
-
-// SnapTrade helpers
-function getSnapTradeClient(): \SnapTrade\Client {
-    return new \SnapTrade\Client(
-        clientId: $_ENV['SNAPTRADE_CLIENT_ID'],
-        consumerKey: $_ENV['SNAPTRADE_CONSUMER_KEY']
-    );
-}
-
-function getSnapTradeUser(PDO $pdo): ?array {
-    $stmt = $pdo->query("SELECT snaptrade_user_id, user_secret FROM snaptrade_users LIMIT 1");
-    $result = $stmt->fetch();
-
-    if (!$result) {
-        return null;
-    }
-
-    return [
-        'user_id' => $result['snaptrade_user_id'],
-        'user_secret' => $result['user_secret']
-    ];
 }
 
 // CRUD Operations
@@ -947,124 +859,4 @@ function exportData(PDO $pdo): never {
         'exported_at' => date('Y-m-d H:i:s'),
         'total' => count($stocks),
     ]);
-}
-
-// SnapTrade OAuth connection flow
-function snaptradeConnect(PDO $pdo): never {
-    try {
-        // Get or create SnapTrade user
-        $snaptradeUserId = $_ENV['SNAPTRADE_USER_ID'] ?? 'stockd-user-1';
-        $user = getSnapTradeUser($pdo);
-
-        if (!$user) {
-            // Register new SnapTrade user
-            $snaptrade = getSnapTradeClient();
-            $registration = $snaptrade->authentication->registerSnapTradeUser($snaptradeUserId);
-
-            $userSecret = is_object($registration) ? $registration->getUserSecret() : $registration['userSecret'];
-
-            // Store in database
-            $stmt = $pdo->prepare("INSERT INTO snaptrade_users (snaptrade_user_id, user_secret) VALUES (?, ?)");
-            $stmt->execute([$snaptradeUserId, $userSecret]);
-
-            $user = [
-                'user_id' => $snaptradeUserId,
-                'user_secret' => $userSecret
-            ];
-        }
-
-        // Generate CSRF state token
-        $state = bin2hex(random_bytes(32));
-        $_SESSION['snaptrade_oauth_state'] = $state;
-
-        // Build callback URL
-        $appUrl = $_ENV['APP_URL'] ?? 'http://localhost:8000';
-        $callbackUrl = $appUrl . '/auth/snaptrade_callback.php?state=' . $state;
-
-        // Get connection portal URL
-        $snaptrade = getSnapTradeClient();
-        $reconnect = $_GET['reconnect'] ?? null;
-
-        $loginArgs = [
-            'user_id' => $user['user_id'],
-            'user_secret' => $user['user_secret'],
-            'immediate_redirect' => true,
-            'custom_redirect' => $callbackUrl,
-        ];
-        if ($reconnect) {
-            $loginArgs['reconnect'] = $reconnect;
-        }
-        $portal = $snaptrade->authentication->loginSnapTradeUser(...$loginArgs);
-
-        // Redirect to portal (override JSON Content-Type)
-        $redirectUri = is_object($portal) ? $portal->getRedirectUri() : $portal['redirectURI'];
-        header('Content-Type: text/html');
-        header('Location: ' . $redirectUri);
-        exit;
-    } catch (\Throwable $e) {
-        error_log('snaptradeConnect error: ' . $e->getMessage());
-        // Redirect to index with error
-        $appUrl = $_ENV['APP_URL'] ?? 'http://localhost:8000';
-        header('Content-Type: text/html');
-        header('Location: ' . $appUrl . '/?error=connection_failed');
-        exit;
-    }
-}
-
-// List all SnapTrade connections with live status check
-function snaptradeConnections(PDO $pdo): never {
-    $user = getSnapTradeUser($pdo);
-
-    if (!$user) {
-        jsonResponse(['connections' => []]);
-    }
-
-    try {
-        // Get stored connections
-        $stmt = $pdo->query("SELECT * FROM connections ORDER BY created_at DESC");
-        $connections = $stmt->fetchAll();
-
-        // Check live status from SnapTrade API
-        $snaptrade = getSnapTradeClient();
-        $liveConnections = $snaptrade->connections->listBrokerageAuthorizations(
-            $user['user_id'],
-            $user['user_secret']
-        );
-
-        // Update status for disabled connections
-        foreach ($liveConnections as $liveConn) {
-            $connId = is_object($liveConn) ? $liveConn->getId() : $liveConn['id'];
-            $disabled = is_object($liveConn) ? $liveConn->getDisabled() : ($liveConn['disabled'] ?? false);
-
-            if ($disabled) {
-                $updateStmt = $pdo->prepare("UPDATE connections SET status = 'disabled' WHERE snaptrade_connection_id = ?");
-                $updateStmt->execute([$connId]);
-            }
-        }
-
-        // Refresh connections list
-        $stmt = $pdo->query("SELECT * FROM connections ORDER BY created_at DESC");
-        $connections = $stmt->fetchAll();
-
-        jsonResponse(['connections' => $connections]);
-    } catch (Exception $e) {
-        jsonResponse(['error' => 'Failed to fetch connections: ' . $e->getMessage()], 500);
-    }
-}
-
-// List all sub-accounts with connection info
-function snaptradeAccounts(PDO $pdo): never {
-    try {
-        $stmt = $pdo->query("
-            SELECT a.*, c.brokerage_name, c.status as connection_status
-            FROM accounts a
-            JOIN connections c ON a.connection_id = c.id
-            ORDER BY c.brokerage_name, a.name
-        ");
-        $accounts = $stmt->fetchAll();
-
-        jsonResponse(['accounts' => $accounts]);
-    } catch (Exception $e) {
-        jsonResponse(['error' => 'Failed to fetch accounts: ' . $e->getMessage()], 500);
-    }
 }
