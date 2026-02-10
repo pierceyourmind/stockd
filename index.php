@@ -1249,64 +1249,6 @@ requireAuth();
             </template>
         </div>
 
-        <!-- Brokerage Connections -->
-        <section class="brokerage-connections" x-show="true" style="margin-bottom: 2rem;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                <h3 style="margin: 0;">Brokerage Connections</h3>
-                <button class="outline" @click="connectBrokerage()" style="margin: 0; width: auto;">
-                    + Connect Brokerage
-                </button>
-            </div>
-
-            <template x-if="brokerageConnections.length > 0">
-                <div style="display: grid; gap: 0.5rem; margin-bottom: 1rem;">
-                    <template x-for="conn in brokerageConnections" :key="conn.id">
-                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem; background: var(--glass-bg, rgba(255,255,255,0.05)); border: 1px solid var(--glass-border, rgba(255,255,255,0.1)); border-radius: 8px;">
-                            <div>
-                                <strong x-text="conn.brokerage_name"></strong>
-                                <small x-text="' - Connected ' + new Date(conn.created_at).toLocaleDateString()" style="opacity: 0.7;"></small>
-                            </div>
-                            <div style="display: flex; align-items: center; gap: 0.5rem;">
-                                <span x-show="conn.status === 'active'" style="color: var(--profit-color, #4caf50); font-size: 0.85rem;">Active</span>
-                                <span x-show="conn.status === 'disabled'" style="color: var(--loss-color, #f44336); font-size: 0.85rem;">Disabled</span>
-                                <button x-show="conn.status === 'disabled'" class="outline secondary" @click="reconnectBrokerage(conn.snaptrade_connection_id)" style="margin: 0; padding: 0.25rem 0.75rem; width: auto; font-size: 0.8rem;">
-                                    Reconnect
-                                </button>
-                            </div>
-                        </div>
-                    </template>
-                </div>
-            </template>
-
-            <template x-if="brokerageAccounts.length > 0">
-                <div style="display: grid; gap: 0.5rem;">
-                    <small style="opacity: 0.6; margin-bottom: 0.25rem;">Sub-Accounts</small>
-                    <template x-for="account in brokerageAccounts" :key="account.id">
-                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 1rem; background: var(--glass-bg, rgba(255,255,255,0.05)); border: 1px solid var(--glass-border, rgba(255,255,255,0.08)); border-radius: 6px; font-size: 0.9rem;">
-                            <div>
-                                <span x-text="account.name || account.institution_name"></span>
-                                <small x-show="account.account_number" x-text="' (' + account.account_number + ')'" style="opacity: 0.5;"></small>
-                            </div>
-                            <div style="text-align: right;">
-                                <span x-show="account.balance_amount" x-text="'$' + parseFloat(account.balance_amount).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})"></span>
-                                <small x-text="account.brokerage_name" style="opacity: 0.6; display: block;"></small>
-                            </div>
-                        </div>
-                    </template>
-                </div>
-            </template>
-
-            <template x-if="brokerageConnections.length === 0 && !connectionsLoading">
-                <p style="opacity: 0.6; text-align: center; padding: 1rem;">
-                    No brokerage accounts connected. Click "Connect Brokerage" to link your Fidelity, Schwab, or SoFi accounts.
-                </p>
-            </template>
-
-            <template x-if="connectionsLoading">
-                <p style="opacity: 0.6; text-align: center; padding: 1rem;" aria-busy="true">Loading connections...</p>
-            </template>
-        </section>
-
         <!-- Holdings/Watchlist Tabs -->
         <div class="view-tabs" x-show="stocks.length > 0">
             <button class="view-tab" :class="{ active: viewMode === 'all' }" @click="viewMode = 'all'">
@@ -1833,10 +1775,6 @@ requireAuth();
                 backoffMultiplier: 1,
                 // Benchmark data
                 benchmarks: {},
-                // Brokerage connections state
-                brokerageConnections: [],
-                brokerageAccounts: [],
-                connectionsLoading: false,
 
                 get isMarketOpen() {
                     const now = new Date();
@@ -1893,29 +1831,9 @@ requireAuth();
                 },
 
                 async init() {
-                    // Check URL parameters for OAuth result messaging
-                    const urlParams = new URLSearchParams(window.location.search);
-                    if (urlParams.get('connected') === 'success') {
-                        this.showToast('Brokerage connected successfully!', 'success');
-                        // Clean URL
-                        window.history.replaceState({}, document.title, '/');
-                    }
-                    if (urlParams.get('error')) {
-                        const errorMap = {
-                            'connection_failed': 'Failed to connect brokerage. Please try again.',
-                            'csrf_failed': 'Security validation failed. Please try again.',
-                            'no_snaptrade_user': 'SnapTrade user not configured. Check your .env file.',
-                            'storage_failed': 'Failed to save connection data. Please try again.'
-                        };
-                        const msg = errorMap[urlParams.get('error')] || 'An error occurred. Please try again.';
-                        this.showToast(msg, 'error');
-                        window.history.replaceState({}, document.title, '/');
-                    }
-
                     await this.loadStocks();
                     await this.loadAlerts();
                     await this.loadBenchmarks();
-                    await this.loadBrokerageConnections();
                     this.startAutoRefresh();
                     // Update the "ago" display every second
                     setInterval(() => this.updateCounter++, 1000);
@@ -1935,37 +1853,6 @@ requireAuth();
                     } catch (e) {
                         console.error('Failed to load benchmarks', e);
                     }
-                },
-
-                async loadBrokerageConnections() {
-                    this.connectionsLoading = true;
-                    try {
-                        const [connectionsRes, accountsRes] = await Promise.all([
-                            fetch('api.php?action=snaptradeConnections'),
-                            fetch('api.php?action=snaptradeAccounts')
-                        ]);
-                        const connectionsData = await connectionsRes.json();
-                        const accountsData = await accountsRes.json();
-
-                        if (connectionsData.connections) {
-                            this.brokerageConnections = connectionsData.connections;
-                        }
-                        if (accountsData.accounts) {
-                            this.brokerageAccounts = accountsData.accounts;
-                        }
-                    } catch (e) {
-                        console.error('Failed to load connections', e);
-                        this.showToast('Failed to load connections', 'error');
-                    }
-                    this.connectionsLoading = false;
-                },
-
-                connectBrokerage() {
-                    window.location.href = 'api.php?action=snaptradeConnect';
-                },
-
-                reconnectBrokerage(connectionId) {
-                    window.location.href = 'api.php?action=snaptradeConnect&reconnect=' + encodeURIComponent(connectionId);
                 },
 
                 getBenchmarkChange(bench) {
