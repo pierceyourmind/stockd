@@ -371,6 +371,7 @@ match ($action) {
     'create' => createStock($pdo),
     'update' => updateStock($pdo),
     'delete' => deleteStock($pdo),
+    'importCSV' => importCSV($pdo),
     'quote' => getQuote(),
     'history' => getHistory(),
     'alerts' => listAlerts($pdo),
@@ -501,6 +502,104 @@ function deleteStock(PDO $pdo): never {
     }
 
     jsonResponse(['message' => 'Stock deleted successfully']);
+}
+
+function importCSV(PDO $pdo): never {
+    // Validate file upload
+    if (!isset($_FILES['csv_file']) || $_FILES['csv_file']['error'] !== UPLOAD_ERR_OK) {
+        jsonResponse(['error' => 'No CSV file uploaded'], 400);
+    }
+
+    $file = $_FILES['csv_file'];
+
+    // Validate file size (max 5MB)
+    $maxSize = 5 * 1024 * 1024; // 5MB in bytes
+    if ($file['size'] > $maxSize) {
+        jsonResponse(['error' => 'File too large (max 5MB)'], 400);
+    }
+
+    // Read CSV content
+    $csvContent = file_get_contents($file['tmp_name']);
+    if ($csvContent === false) {
+        jsonResponse(['error' => 'Failed to read CSV file'], 500);
+    }
+
+    // Parse CSV
+    $parseResult = parseCSV($csvContent);
+
+    if (isset($parseResult['error'])) {
+        jsonResponse(['error' => $parseResult['error']], 400);
+    }
+
+    $broker = $parseResult['broker'];
+    $holdings = $parseResult['holdings'];
+    $skipped = $parseResult['skipped'];
+
+    // Upsert holdings into database
+    $created = 0;
+    $updated = 0;
+    $accounts = [];
+
+    try {
+        $pdo->beginTransaction();
+
+        foreach ($holdings as $holding) {
+            $symbol = $holding['symbol'];
+            $companyName = $holding['company_name'];
+            $account = $holding['account'];
+            $shares = $holding['shares'];
+            $purchasePrice = $holding['purchase_price'];
+
+            // Track unique accounts
+            if (!in_array($account, $accounts)) {
+                $accounts[] = $account;
+            }
+
+            // Check if stock exists with same symbol and account
+            $stmt = $pdo->prepare("SELECT id FROM stocks WHERE symbol = ? AND account = ?");
+            $stmt->execute([$symbol, $account]);
+            $existing = $stmt->fetch();
+
+            if ($existing) {
+                // Update existing stock
+                $stmt = $pdo->prepare("
+                    UPDATE stocks
+                    SET company_name = ?, shares = ?, purchase_price = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                ");
+                $stmt->execute([$companyName, $shares, $purchasePrice, $existing['id']]);
+                $updated++;
+            } else {
+                // Insert new stock
+                $stmt = $pdo->prepare("
+                    INSERT INTO stocks (symbol, company_name, account, shares, purchase_price, is_watchlist)
+                    VALUES (?, ?, ?, ?, ?, 0)
+                ");
+                $stmt->execute([$symbol, $companyName, $account, $shares, $purchasePrice]);
+                $created++;
+            }
+        }
+
+        $pdo->commit();
+
+        $totalHoldings = count($holdings);
+        $message = "Successfully imported $totalHoldings holdings ($created new, $updated updated)";
+
+        jsonResponse([
+            'import' => [
+                'broker' => $broker,
+                'created' => $created,
+                'updated' => $updated,
+                'skipped' => $skipped,
+                'total_holdings' => $totalHoldings,
+                'accounts' => $accounts,
+            ],
+            'message' => $message,
+        ], 201);
+    } catch (PDOException $e) {
+        $pdo->rollBack();
+        jsonResponse(['error' => 'Database error: ' . $e->getMessage()], 500);
+    }
 }
 
 function getQuote(): never {
