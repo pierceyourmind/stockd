@@ -1,3 +1,8 @@
+<?php
+require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/auth/session.php';
+requireAuth();
+?>
 <!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
