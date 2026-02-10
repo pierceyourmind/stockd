@@ -1,71 +1,55 @@
-# Requirements: Stockd Brokerage Sync
+# Requirements: Stockd CSV Portfolio Import
 
-**Defined:** 2026-02-09
-**Core Value:** Brokerage accounts are the source of truth for holdings — stocks sync automatically so the portfolio always reflects what you actually own.
+**Defined:** 2026-02-10
+**Core Value:** Portfolio data stays current through simple CSV re-imports from brokers, with manual entry available for any stock.
 
-## v1 Requirements
+## v1.1 Requirements
 
-Requirements for SnapTrade brokerage sync integration. Each maps to roadmap phases.
+Requirements for CSV-based portfolio import from Fidelity and Schwab.
 
-### Security
+### Cleanup
 
-- [ ] **SEC-01**: User must authenticate before accessing any page or API endpoint
-- [ ] **SEC-02**: SnapTrade API credentials stored securely outside codebase (.env file)
+- [ ] **CLEAN-01**: All SnapTrade code, dependencies, database tables, and environment variables removed
+- [ ] **CLEAN-02**: Composer dependency `konfig/snaptrade-php-sdk` uninstalled
+- [ ] **CLEAN-03**: SnapTrade-specific files deleted (`auth/snaptrade_callback.php`, `test_snaptrade.php`)
 
-### Brokerage Connections
+### CSV Import
 
-- [ ] **CONN-01**: User can connect Fidelity account via SnapTrade OAuth
-- [ ] **CONN-02**: User can connect Schwab account via SnapTrade OAuth
-- [ ] **CONN-03**: User can connect SoFi account via SnapTrade OAuth
-
-### Holdings Sync
-
-- [ ] **SYNC-01**: Page displays cached holdings immediately, syncs fresh data in background
-- [ ] **SYNC-02**: Sold positions auto-removed when no longer in broker holdings
-- [ ] **SYNC-03**: User can manually refresh holdings via button (rate-limited)
-- [ ] **SYNC-04**: User can see when holdings were last synced
-- [ ] **SYNC-05**: Manual stock entry restricted to watchlist only
+- [ ] **CSV-01**: User can upload a Fidelity positions CSV and see holdings imported with cost basis
+- [ ] **CSV-02**: User can upload a Schwab positions CSV and see holdings imported with cost basis
+- [ ] **CSV-03**: App auto-detects whether uploaded CSV is Fidelity or Schwab format
+- [ ] **CSV-04**: Numeric values parsed correctly (strip `$`, `%`, `+` signs; handle `--` as null)
 
 ### Account Organization
 
-- [ ] **ACCT-01**: Each sub-account displayed separately (e.g., Fidelity 401k, Fidelity Roth IRA)
-- [ ] **ACCT-02**: User can filter portfolio view by account via dropdown
-- [ ] **ACCT-03**: Synced and watchlist stocks visually distinguished
+- [ ] **ACCT-01**: Imported holdings grouped by account (e.g., "Fidelity ROTH IRA", "Schwab Individual")
+- [ ] **ACCT-02**: User can filter portfolio view by account
 
-### Cost Basis & Gain/Loss
+### Re-Import & Data Management
 
-- [ ] **COST-01**: Unrealized gain/loss calculated for positions with cost basis
-- [ ] **COST-02**: User prompted to enter cost basis when broker doesn't provide it
-- [ ] **COST-03**: Positions missing cost basis show warning instead of incorrect values
+- [ ] **REIMP-01**: Re-uploading a CSV updates existing holdings (upsert by account + symbol)
+- [ ] **REIMP-02**: Stocks in previous import but missing from new import are flagged for user review
+- [ ] **REIMP-03**: User can confirm or dismiss flagged removals
 
-### Error Handling
+### Cost Basis
 
-- [ ] **ERR-01**: Sync failures show specific error messages per failure type
-- [ ] **ERR-02**: User notified when a brokerage connection breaks
-- [ ] **ERR-03**: User warned when data is stale (>48 hours since last sync)
+- [ ] **COST-01**: Gain/loss calculated using cost basis from CSV
+- [ ] **COST-02**: User can manually enter or edit cost basis for any stock
 
-## v2 Requirements
+## Future Requirements
 
 Deferred to future release. Tracked but not in current roadmap.
 
-### Connection Management
+### SoFi Support
 
-- **CMGMT-01**: User can view all connected accounts and their status
-- **CMGMT-02**: User can disconnect a brokerage account
-- **CMGMT-03**: User can reauthorize when OAuth tokens expire (30-90 days)
+- **SOFI-01**: User can import SoFi holdings (pending SoFi adding positions CSV export)
+- **SOFI-02**: SoFi transaction history reconstructed into positions (alternative approach)
 
-### Advanced Sync
+### Advanced Import
 
-- **ASYNC-01**: Webhook-based automatic sync from SnapTrade events
-- **ASYNC-02**: Background polling fallback for stale connections (cron)
-- **ASYNC-03**: Exponential backoff on rate limit (429) errors
-
-### Advanced Data
-
-- **ADATA-01**: Transaction history display from broker order data
-- **ADATA-02**: Realized gain/loss reporting for tax planning
-- **ADATA-03**: Cost basis source tracking (manual vs brokerage)
-- **ADATA-04**: Account type labels (401k, IRA, Roth, taxable)
+- **AIMP-01**: Drag-and-drop file upload
+- **AIMP-02**: Import history log (what was imported when)
+- **AIMP-03**: Scheduled import reminder notifications
 
 ## Out of Scope
 
@@ -73,18 +57,12 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Feature | Reason |
 |---------|--------|
-| Trading via SnapTrade | This is a tracker, not a trading platform |
-| Multi-user / authentication beyond basic auth | Single-user personal tool |
-| Plaid integration | SnapTrade covers all 3 brokers at no cost |
-| Direct broker APIs | SnapTrade abstracts broker differences |
-| Background cron sync | Page-load sync is sufficient for personal use |
-| CSV/OFX import from brokers | SnapTrade replaces manual import |
-| Performance metrics (TWR/MWR) | High complexity, requires historical snapshots |
-| Cost basis method selection (FIFO/LIFO) | Niche audience, high complexity |
-| Tax form generation | High liability, brokerages provide official forms |
-| Every brokerage integration | Focus on Fidelity, Schwab, SoFi via SnapTrade |
-| Editing synced holdings | Broker is source of truth; next sync overwrites edits |
-| Real-time live streaming prices | Rate limits, costs; on-demand refresh sufficient |
+| SnapTrade / Plaid / broker APIs | CSV import is simpler, zero cost, no dependencies |
+| SoFi import | SoFi doesn't export holdings CSV |
+| Transaction history import | Positions snapshot is sufficient; reconstructing from trades is fragile |
+| Automated background sync | CSV import is user-initiated |
+| Trading | This is a tracker, not a trading platform |
+| Multi-user authentication | Single-user personal tool |
 
 ## Traceability
 
@@ -92,31 +70,26 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SEC-01 | Phase 1 | Pending |
-| SEC-02 | Phase 1 | Pending |
-| CONN-01 | Phase 2 | Pending |
-| CONN-02 | Phase 2 | Pending |
-| CONN-03 | Phase 2 | Pending |
-| SYNC-01 | Phase 3 | Pending |
-| SYNC-02 | Phase 3 | Pending |
-| SYNC-03 | Phase 3 | Pending |
-| SYNC-04 | Phase 3 | Pending |
-| SYNC-05 | Phase 3 | Pending |
-| ACCT-01 | Phase 2 | Pending |
-| ACCT-02 | Phase 3 | Pending |
-| ACCT-03 | Phase 3 | Pending |
-| COST-01 | Phase 3 | Pending |
-| COST-02 | Phase 3 | Pending |
-| COST-03 | Phase 3 | Pending |
-| ERR-01 | Phase 4 | Pending |
-| ERR-02 | Phase 4 | Pending |
-| ERR-03 | Phase 4 | Pending |
+| CLEAN-01 | TBD | Pending |
+| CLEAN-02 | TBD | Pending |
+| CLEAN-03 | TBD | Pending |
+| CSV-01 | TBD | Pending |
+| CSV-02 | TBD | Pending |
+| CSV-03 | TBD | Pending |
+| CSV-04 | TBD | Pending |
+| ACCT-01 | TBD | Pending |
+| ACCT-02 | TBD | Pending |
+| REIMP-01 | TBD | Pending |
+| REIMP-02 | TBD | Pending |
+| REIMP-03 | TBD | Pending |
+| COST-01 | TBD | Pending |
+| COST-02 | TBD | Pending |
 
 **Coverage:**
-- v1 requirements: 19 total
-- Mapped to phases: 19
-- Unmapped: 0
+- v1.1 requirements: 14 total
+- Mapped to phases: 0
+- Unmapped: 14
 
 ---
-*Requirements defined: 2026-02-09*
-*Last updated: 2026-02-09 after roadmap creation*
+*Requirements defined: 2026-02-10*
+*Last updated: 2026-02-10 after initial definition*
