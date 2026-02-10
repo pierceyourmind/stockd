@@ -5,7 +5,7 @@
 See: .planning/PROJECT.md (updated 2026-02-09)
 
 **Core value:** Brokerage accounts are the source of truth for holdings -- stocks sync automatically so the portfolio always reflects what you actually own.
-**Current focus:** Phase 1 - Security & SDK Foundation
+**Current focus:** Phase 2 - Brokerage Connections
 
 ## Current Position
 

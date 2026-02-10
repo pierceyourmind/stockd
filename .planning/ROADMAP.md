@@ -12,7 +12,7 @@ Stockd is a working portfolio tracker being extended with automated brokerage sy
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Security & SDK Foundation** - Authentication gate and SnapTrade SDK infrastructure
+- [x] **Phase 1: Security & SDK Foundation** - Authentication gate and SnapTrade SDK infrastructure
 - [ ] **Phase 2: Brokerage Connections** - OAuth flows for all three brokers with sub-account discovery
 - [ ] **Phase 3: Holdings Sync & Display** - Core sync engine, cost basis handling, and portfolio integration
 - [ ] **Phase 4: Error Handling & Resilience** - Failure messaging, stale data warnings, and connection monitoring
@@ -30,8 +30,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans:** 2 plans
 
 Plans:
-- [ ] 01-01-PLAN.md -- Authentication gate with session-based login/logout and auth checks on api.php + index.php
-- [ ] 01-02-PLAN.md -- Composer setup, phpdotenv + SnapTrade SDK install, SQLite WAL mode, schema migration, API verification
+- [x] 01-01-PLAN.md -- Authentication gate with session-based login/logout and auth checks on api.php + index.php
+- [x] 01-02-PLAN.md -- Composer setup, phpdotenv + SnapTrade SDK install, SQLite WAL mode, schema migration, API verification
 
 ### Phase 2: Brokerage Connections
 **Goal**: User can connect all three brokerage accounts through SnapTrade OAuth and see their sub-accounts listed
@@ -84,7 +84,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Security & SDK Foundation | 0/2 | Planned | - |
+| 1. Security & SDK Foundation | 2/2 | Complete | 2026-02-10 |
 | 2. Brokerage Connections | 0/2 | Not started | - |
 | 3. Holdings Sync & Display | 0/3 | Not started | - |
 | 4. Error Handling & Resilience | 0/1 | Not started | - |
