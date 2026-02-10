@@ -1,90 +1,129 @@
-# Roadmap: Stockd Brokerage Sync
+# Roadmap: v1.1 CSV Portfolio Import
+
+**Milestone:** v1.1 CSV Portfolio Import
+**Defined:** 2026-02-10
+**Depth:** Quick (3 phases)
+**Coverage:** 14/14 requirements mapped
 
 ## Overview
 
-Stockd is a working portfolio tracker being extended with automated brokerage sync via SnapTrade. The build progresses through four phases: lock down the publicly tunneled app with authentication and SDK setup, wire up OAuth connections for Fidelity/Schwab/SoFi, deliver the core sync-and-display pipeline with cost basis handling, and finish with error handling that keeps the user informed when things break. Each phase delivers a coherent capability that unblocks the next.
+Replace SnapTrade API integration with CSV file upload for Fidelity and Schwab holdings. Remove all third-party sync dependencies. Enable simple, cost-free portfolio updates through broker-exported CSV files with cost basis tracking.
 
 ## Phases
 
 **Phase Numbering:**
-- Integer phases (1, 2, 3): Planned milestone work
-- Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
+- Integer phases (5, 6, 7): Planned milestone work
+- Decimal phases (5.1, 5.2): Urgent insertions (marked with INSERTED)
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [x] **Phase 1: Security & SDK Foundation** - Authentication gate and SnapTrade SDK infrastructure
-- [ ] **Phase 2: Brokerage Connections** - OAuth flows for all three brokers with sub-account discovery
-- [ ] **Phase 3: Holdings Sync & Display** - Core sync engine, cost basis handling, and portfolio integration
-- [ ] **Phase 4: Error Handling & Resilience** - Failure messaging, stale data warnings, and connection monitoring
+- [ ] **Phase 5: SnapTrade Removal** - Clean codebase of all SnapTrade dependencies
+- [ ] **Phase 6: CSV Import Engine** - Upload and parse Fidelity/Schwab CSVs with auto-detection
+- [ ] **Phase 7: Re-Import & Data Management** - Update workflow with diff review and manual cost basis editing
 
 ## Phase Details
 
-### Phase 1: Security & SDK Foundation
-**Goal**: The app is locked behind authentication and the SnapTrade SDK is installed, configured, and verified against the API
-**Depends on**: Nothing (first phase)
-**Requirements**: SEC-01, SEC-02
+### Phase 5: SnapTrade Removal
+
+**Goal:** Codebase is clean of all SnapTrade dependencies, ready for CSV-based import implementation
+
+**Depends on:** Nothing (first phase of milestone)
+
+**Requirements:** CLEAN-01, CLEAN-02, CLEAN-03
+
 **Success Criteria** (what must be TRUE):
-  1. Visiting any page or API endpoint without credentials returns a login challenge (not app content)
-  2. SnapTrade API keys are loaded from .env file and never appear in source code
-  3. A test call to the SnapTrade API (e.g., registerUser) succeeds and returns a valid response
-**Plans:** 2 plans
+1. No SnapTrade code remains in api.php, index.php, or auth directory
+2. Composer.json and composer.lock contain no snaptrade-php-sdk dependency
+3. Database contains no brokerage_connections or snaptrade_* tables
+4. App continues to function with existing manual stock entry and auth gate
+
+**Plans:** TBD
 
 Plans:
-- [x] 01-01-PLAN.md -- Authentication gate with session-based login/logout and auth checks on api.php + index.php
-- [x] 01-02-PLAN.md -- Composer setup, phpdotenv + SnapTrade SDK install, SQLite WAL mode, schema migration, API verification
+- [ ] 05-01: Remove SnapTrade code, uninstall SDK, drop database tables
 
-### Phase 2: Brokerage Connections
-**Goal**: User can connect all three brokerage accounts through SnapTrade OAuth and see their sub-accounts listed
-**Depends on**: Phase 1
-**Requirements**: CONN-01, CONN-02, CONN-03, ACCT-01
+---
+
+### Phase 6: CSV Import Engine
+
+**Goal:** Users can upload Fidelity or Schwab CSV files and see holdings imported with correct cost basis and account grouping
+
+**Depends on:** Phase 5 (clean foundation)
+
+**Requirements:** CSV-01, CSV-02, CSV-03, CSV-04, ACCT-01, COST-01
+
 **Success Criteria** (what must be TRUE):
-  1. User can click "Connect Brokerage" and complete OAuth for Fidelity, Schwab, or SoFi
-  2. After connecting, each sub-account (401k, IRA, individual, etc.) appears as a separate entry
-  3. Connected brokerages are listed with their connection status visible
-**Plans:** 2 plans
+1. User uploads Fidelity CSV via UI and sees holdings appear in portfolio grouped by account
+2. User uploads Schwab CSV via UI and sees holdings appear in portfolio grouped by account
+3. App auto-detects broker format without user selection
+4. Imported stocks show correct gain/loss calculated from CSV cost basis
+5. Numeric values with currency symbols, percentages, and null indicators parse correctly
+
+**Plans:** TBD
 
 Plans:
-- [ ] 02-01-PLAN.md -- SnapTrade user registration, OAuth portal redirect, callback handler with CSRF protection, connection and account storage, listing endpoints
-- [ ] 02-02-PLAN.md -- Frontend brokerage connections UI with connect button, status display, sub-account listing, reconnect, and OAuth result messaging
+- [ ] 06-01: CSV parser with broker detection (Fidelity 16-column, Schwab 26-column)
+- [ ] 06-02: Import backend (upsert stocks with account + cost basis)
+- [ ] 06-03: Upload UI and import result display
 
-### Phase 3: Holdings Sync & Display
-**Goal**: Portfolio reflects actual brokerage holdings with synced data, cost basis tracking, and clear separation between synced and watchlist stocks
-**Depends on**: Phase 2
-**Requirements**: SYNC-01, SYNC-02, SYNC-03, SYNC-04, SYNC-05, ACCT-02, ACCT-03, COST-01, COST-02, COST-03
+---
+
+### Phase 7: Re-Import & Data Management
+
+**Goal:** Users can re-upload CSV files to refresh holdings, review what changed, and manually adjust cost basis as needed
+
+**Depends on:** Phase 6 (import engine exists)
+
+**Requirements:** REIMP-01, REIMP-02, REIMP-03, ACCT-02, COST-02
+
 **Success Criteria** (what must be TRUE):
-  1. Page loads instantly with cached holdings, then updates in the background when fresh data arrives from SnapTrade
-  2. Stocks sold at the broker disappear from the portfolio on next sync
-  3. User can filter the portfolio by account and can distinguish synced holdings from watchlist stocks at a glance
-  4. Positions with cost basis show unrealized gain/loss; positions without cost basis show a prompt to enter it manually (never incorrect values)
-  5. Manual stock entry is restricted to watchlist mode only -- holdings come exclusively from brokers
-**Plans**: TBD
+1. Re-uploading CSV for same account updates existing holdings quantities and cost basis
+2. Stocks present in previous import but missing from new CSV are flagged with visual indicator
+3. User can review flagged stocks and confirm removal or dismiss flag
+4. User can filter portfolio view to show stocks from specific account
+5. User can manually edit cost basis for any stock (imported or manual) and see updated gain/loss
+
+**Plans:** TBD
 
 Plans:
-- [ ] 03-01: Sync engine (fetch, normalize, upsert holdings with stale-first display)
-- [ ] 03-02: Cost basis handling and manual entry prompt
-- [ ] 03-03: Account filtering, synced/watchlist distinction, and manual entry restriction
+- [ ] 07-01: Re-import diff engine (detect removed stocks, flag for review)
+- [ ] 07-02: Account filtering UI enhancement
+- [ ] 07-03: Manual cost basis editing UI
 
-### Phase 4: Error Handling & Resilience
-**Goal**: User is informed about sync failures, broken connections, and stale data instead of seeing silent failures
-**Depends on**: Phase 3
-**Requirements**: ERR-01, ERR-02, ERR-03
-**Success Criteria** (what must be TRUE):
-  1. When a sync fails, user sees a specific error message explaining what went wrong (not a generic error)
-  2. When a brokerage connection breaks (revoked, expired), user sees a notification with instructions to reconnect
-  3. When holdings data is older than 48 hours, user sees a stale data warning
-**Plans**: TBD
-
-Plans:
-- [ ] 04-01: Error handling, connection monitoring, and stale data warnings
+---
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 -> 2 -> 3 -> 4
+Phases execute in numeric order: 5 -> 6 -> 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Security & SDK Foundation | 2/2 | Complete | 2026-02-10 |
-| 2. Brokerage Connections | 0/2 | Not started | - |
-| 3. Holdings Sync & Display | 0/3 | Not started | - |
-| 4. Error Handling & Resilience | 0/1 | Not started | - |
+| 5. SnapTrade Removal | 0/1 | Not started | - |
+| 6. CSV Import Engine | 0/3 | Not started | - |
+| 7. Re-Import & Data Management | 0/3 | Not started | - |
+
+**Overall:** 0/3 phases complete
+
+---
+
+## Requirement Coverage
+
+All 14 v1.1 requirements mapped to phases:
+
+| Category | Requirements | Phase |
+|----------|--------------|-------|
+| Cleanup | CLEAN-01, CLEAN-02, CLEAN-03 | 5 |
+| CSV Import | CSV-01, CSV-02, CSV-03, CSV-04 | 6 |
+| Account Organization | ACCT-01 | 6 |
+| Account Organization | ACCT-02 | 7 |
+| Re-Import | REIMP-01, REIMP-02, REIMP-03 | 7 |
+| Cost Basis | COST-01 | 6 |
+| Cost Basis | COST-02 | 7 |
+
+**Coverage:** 14/14 requirements (100%)
+
+---
+
+*Roadmap created: 2026-02-10*
+*Last updated: 2026-02-10*

@@ -5,18 +5,24 @@
 See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** Portfolio data stays current through simple CSV re-imports from brokers, with manual entry available for any stock.
+
 **Current focus:** Milestone v1.1 — CSV Portfolio Import
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-02-10 — Milestone v1.1 started
+**Phase:** 5 - SnapTrade Removal
+**Plan:** Not yet created
+**Status:** Not started
+
+**Progress:** `[░░░░░░░░░░░░░░░░░░░░]` 0% (0/3 phases complete)
+
+**Last activity:** 2026-02-10 — v1.1 roadmap created
+
+**Next action:** Run `/gsd:plan-phase 5` to create execution plan for SnapTrade cleanup.
 
 ## Performance Metrics
 
-**Velocity:**
+**Velocity (v1.0 + v1.1 combined):**
 - Total plans completed: 3
 - Average duration: 331 seconds
 - Total execution time: 0.28 hours
@@ -32,15 +38,13 @@ Last activity: 2026-02-10 — Milestone v1.1 started
 - Last 5 plans: 105s, 720s, 169s
 - Trend: Accelerating
 
+**v1.1 Milestone:**
+- Milestone started: 2026-02-10
+- Days elapsed: 0
+- Phases completed: 0/3
+- Requirements delivered: 0/14
+
 *Updated after each plan completion*
-
-**Detailed Plan Metrics:**
-
-| Phase | Plan | Duration | Tasks | Files |
-|-------|------|----------|-------|-------|
-| 01-security-sdk-foundation | 01 | 105s | 2 | 8 |
-| 01-security-sdk-foundation | 02 | 720s | 3 | 5 |
-| 02-brokerage-connections | 01 | 169s | 2 | 3 |
 
 ## Accumulated Context
 
@@ -59,7 +63,12 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- Remove all SnapTrade code before starting CSV import work
+- [ ] Plan Phase 5: SnapTrade Removal
+- [ ] Execute Phase 5
+- [ ] Plan Phase 6: CSV Import Engine
+- [ ] Execute Phase 6
+- [ ] Plan Phase 7: Re-Import & Data Management
+- [ ] Execute Phase 7
 
 ### Blockers/Concerns
 
@@ -67,7 +76,21 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-02-10
-Stopped at: Defining v1.1 requirements
-Next step: Complete requirements definition, then create roadmap
-Resume: /gsd:new-milestone (in progress)
+**Last session:** 2026-02-10
+**Stopped at:** v1.1 roadmap creation complete
+**Next step:** Plan Phase 5 (SnapTrade Removal)
+**Resume:** `/gsd:plan-phase 5`
+
+**Codebase context for Phase 5:**
+- api.php: ~1071 lines backend with SnapTrade routes/functions/schema to remove
+- index.php: ~2614 lines frontend with SnapTrade UI code to remove
+- Files to delete: auth/snaptrade_callback.php, test_snaptrade.php
+- Composer dependency to uninstall: konfig/snaptrade-php-sdk
+- Database tables to drop: brokerage_connections, snaptrade_* tables
+- Auth gate from v1.0 Phase 1 stays (useful regardless of sync method)
+- Existing stocks table and portfolio features must not be disrupted
+
+---
+
+*State initialized: 2026-02-09 (v1.0)*
+*Updated: 2026-02-10 (v1.1 roadmap created)*

@@ -70,26 +70,27 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CLEAN-01 | TBD | Pending |
-| CLEAN-02 | TBD | Pending |
-| CLEAN-03 | TBD | Pending |
-| CSV-01 | TBD | Pending |
-| CSV-02 | TBD | Pending |
-| CSV-03 | TBD | Pending |
-| CSV-04 | TBD | Pending |
-| ACCT-01 | TBD | Pending |
-| ACCT-02 | TBD | Pending |
-| REIMP-01 | TBD | Pending |
-| REIMP-02 | TBD | Pending |
-| REIMP-03 | TBD | Pending |
-| COST-01 | TBD | Pending |
-| COST-02 | TBD | Pending |
+| CLEAN-01 | Phase 5 | Pending |
+| CLEAN-02 | Phase 5 | Pending |
+| CLEAN-03 | Phase 5 | Pending |
+| CSV-01 | Phase 6 | Pending |
+| CSV-02 | Phase 6 | Pending |
+| CSV-03 | Phase 6 | Pending |
+| CSV-04 | Phase 6 | Pending |
+| ACCT-01 | Phase 6 | Pending |
+| ACCT-02 | Phase 7 | Pending |
+| REIMP-01 | Phase 7 | Pending |
+| REIMP-02 | Phase 7 | Pending |
+| REIMP-03 | Phase 7 | Pending |
+| COST-01 | Phase 6 | Pending |
+| COST-02 | Phase 7 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 14 total
-- Mapped to phases: 0
-- Unmapped: 14
+- Mapped to phases: 14
+- Unmapped: 0
+- Coverage: 100%
 
 ---
 *Requirements defined: 2026-02-10*
-*Last updated: 2026-02-10 after initial definition*
+*Last updated: 2026-02-10 after v1.1 roadmap creation*
