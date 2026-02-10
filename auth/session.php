@@ -6,7 +6,7 @@ session_start([
     'cookie_lifetime' => 0,
     'cookie_secure' => true,
     'cookie_httponly' => true,
-    'cookie_samesite' => 'Strict',
+    'cookie_samesite' => 'Lax',
     'cookie_path' => '/',
 ]);
 

@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 ## Current Position
 
 Phase: 2 of 4 (Brokerage Connections)
-Plan: 1 of 1 in current phase
-Status: Complete
-Last activity: 2026-02-10 -- Completed plan 02-01 (SnapTrade OAuth Connection Flow)
+Plan: Phase 2 requires replanning
+Status: BLOCKED — Provider change (SnapTrade → Plaid)
+Last activity: 2026-02-10 -- Phase 2 execution paused: SnapTrade doesn't support Fidelity or SoFi; switching to Plaid
 
-Progress: [██████░░░░] 37.5%
+Progress: [████░░░░░░] 25.0%
 
 ## Performance Metrics
 
@@ -73,12 +73,15 @@ None yet.
 
 ### Blockers/Concerns
 
-- Research flag: SnapTrade Connection Portal UX (iframe vs popup vs redirect) needs testing during Phase 2
-- Research flag: Symbol normalization rules need validation against real SnapTrade responses during Phase 3
-- Research gap: Exact SnapTrade rate limits not published -- implement conservative backoff
+- **BLOCKING**: SnapTrade doesn't support Fidelity or SoFi. Only Schwab available. Switching to Plaid.
+- SnapTrade test/sandbox credentials cannot connect real brokerages
+- SameSite cookie changed from Strict to Lax (required for OAuth redirect flows)
+- Research flag: Symbol normalization rules need validation against real API responses during Phase 3
+- SDK calling pattern: SnapTrade PHP SDK uses flattened named params, not body objects (discovered during debugging)
 
 ## Session Continuity
 
 Last session: 2026-02-10
-Stopped at: Completed 02-01-PLAN.md (SnapTrade OAuth Connection Flow) - Phase 2 plan 01 complete
-Resume file: .planning/phases/02-brokerage-connections/02-01-SUMMARY.md
+Stopped at: Phase 2 execution paused — provider change required (SnapTrade → Plaid)
+Next step: Replan Phase 2 with Plaid integration. Clean up SnapTrade code from Phase 1.
+Resume: /gsd:plan-phase 2 (after clearing context)

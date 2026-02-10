@@ -959,17 +959,17 @@ function snaptradeConnect(PDO $pdo): never {
         if (!$user) {
             // Register new SnapTrade user
             $snaptrade = getSnapTradeClient();
-            $registration = $snaptrade->authentication->registerSnapTradeUser([
-                'userId' => $snaptradeUserId
-            ]);
+            $registration = $snaptrade->authentication->registerSnapTradeUser($snaptradeUserId);
+
+            $userSecret = is_object($registration) ? $registration->getUserSecret() : $registration['userSecret'];
 
             // Store in database
             $stmt = $pdo->prepare("INSERT INTO snaptrade_users (snaptrade_user_id, user_secret) VALUES (?, ?)");
-            $stmt->execute([$snaptradeUserId, $registration['userSecret']]);
+            $stmt->execute([$snaptradeUserId, $userSecret]);
 
             $user = [
                 'user_id' => $snaptradeUserId,
-                'user_secret' => $registration['userSecret']
+                'user_secret' => $userSecret
             ];
         }
 
@@ -985,25 +985,24 @@ function snaptradeConnect(PDO $pdo): never {
         $snaptrade = getSnapTradeClient();
         $reconnect = $_GET['reconnect'] ?? null;
 
-        $loginParams = [
-            'userId' => $user['user_id'],
-            'userSecret' => $user['user_secret'],
-            'immediateRedirect' => true,
-            'customRedirect' => $callbackUrl,
-            'connectionType' => 'read'
+        $loginArgs = [
+            'user_id' => $user['user_id'],
+            'user_secret' => $user['user_secret'],
+            'immediate_redirect' => true,
+            'custom_redirect' => $callbackUrl,
         ];
-
         if ($reconnect) {
-            $loginParams['reconnect'] = $reconnect;
+            $loginArgs['reconnect'] = $reconnect;
         }
-
-        $portal = $snaptrade->authentication->loginSnapTradeUser($loginParams);
+        $portal = $snaptrade->authentication->loginSnapTradeUser(...$loginArgs);
 
         // Redirect to portal (override JSON Content-Type)
+        $redirectUri = is_object($portal) ? $portal->getRedirectUri() : $portal['redirectURI'];
         header('Content-Type: text/html');
-        header('Location: ' . $portal['redirectURI']);
+        header('Location: ' . $redirectUri);
         exit;
-    } catch (Exception $e) {
+    } catch (\Throwable $e) {
+        error_log('snaptradeConnect error: ' . $e->getMessage());
         // Redirect to index with error
         $appUrl = $_ENV['APP_URL'] ?? 'http://localhost:8000';
         header('Content-Type: text/html');
@@ -1028,8 +1027,8 @@ function snaptradeConnections(PDO $pdo): never {
         // Check live status from SnapTrade API
         $snaptrade = getSnapTradeClient();
         $liveConnections = $snaptrade->connections->listBrokerageAuthorizations(
-            userId: $user['user_id'],
-            userSecret: $user['user_secret']
+            $user['user_id'],
+            $user['user_secret']
         );
 
         // Update status for disabled connections

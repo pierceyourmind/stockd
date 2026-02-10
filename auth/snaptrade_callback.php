@@ -55,14 +55,14 @@ $snaptrade = new \SnapTrade\Client(
 try {
     // Fetch connections from SnapTrade API
     $connections = $snaptrade->connections->listBrokerageAuthorizations(
-        userId: $userId,
-        userSecret: $userSecret
+        $userId,
+        $userSecret
     );
 
     // Fetch accounts from SnapTrade API
     $accounts = $snaptrade->accountInformation->listUserAccounts(
-        userId: $userId,
-        userSecret: $userSecret
+        $userId,
+        $userSecret
     );
 
     // Store connections and accounts in a transaction
@@ -161,10 +161,11 @@ try {
     // Redirect to success
     header('Location: /?connected=success');
     exit;
-} catch (Exception $e) {
+} catch (\Throwable $e) {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
     }
+    error_log('snaptrade_callback error: ' . $e->getMessage());
     header('Location: /?error=storage_failed');
     exit;
 }
