@@ -59,12 +59,11 @@ Plans:
 4. Imported stocks show correct gain/loss calculated from CSV cost basis
 5. Numeric values with currency symbols, percentages, and null indicators parse correctly
 
-**Plans:** TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 06-01: CSV parser with broker detection (Fidelity 16-column, Schwab 26-column)
-- [ ] 06-02: Import backend (upsert stocks with account + cost basis)
-- [ ] 06-03: Upload UI and import result display
+- [ ] 06-01-PLAN.md -- CSV parser with broker auto-detection and import API endpoint
+- [ ] 06-02-PLAN.md -- Upload UI with import modal and result display
 
 ---
 
@@ -100,7 +99,7 @@ Phases execute in numeric order: 5 -> 6 -> 7
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 5. SnapTrade Removal | 1/1 | ✓ Complete | 2026-02-10 |
-| 6. CSV Import Engine | 0/3 | Not started | - |
+| 6. CSV Import Engine | 0/2 | Not started | - |
 | 7. Re-Import & Data Management | 0/3 | Not started | - |
 
 **Overall:** 1/3 phases complete
@@ -126,4 +125,4 @@ All 14 v1.1 requirements mapped to phases:
 ---
 
 *Roadmap created: 2026-02-10*
-*Last updated: 2026-02-10 (Phase 5 complete)*
+*Last updated: 2026-02-10 (Phase 6 planned)*
