@@ -1192,6 +1192,14 @@ requireAuth();
                 </p>
             </div>
             <div style="display: flex; gap: 12px; align-items: center;">
+                <button class="export-btn" @click="showImportModal = true" style="border-color: var(--pico-primary); color: var(--pico-primary);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    Import CSV
+                </button>
                 <button class="export-btn" @click="exportPortfolio()" x-show="stocks.length > 0">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -1716,6 +1724,94 @@ requireAuth();
         </article>
     </dialog>
 
+    <!-- Import CSV Modal -->
+    <dialog :open="showImportModal" @click.self="closeImportModal()">
+        <article style="min-width: 450px; max-width: 90vw;">
+            <header>
+                <button aria-label="Close" rel="prev" @click="closeImportModal()"></button>
+                <h3>Import CSV</h3>
+            </header>
+
+            <!-- Upload State -->
+            <div x-show="!importResult">
+                <p style="color: var(--pico-muted-color); margin-bottom: 16px;">
+                    Upload a positions CSV file exported from Fidelity or Schwab. The broker format will be auto-detected.
+                </p>
+                <label>
+                    CSV File
+                    <input type="file" accept=".csv" @change="importFile = $event.target.files[0]"
+                           :disabled="importing">
+                </label>
+                <p style="font-size: 0.85em; color: var(--pico-muted-color);">
+                    Supported: Fidelity Positions CSV, Schwab Positions CSV
+                </p>
+                <footer style="display: flex; gap: 8px; justify-content: flex-end;">
+                    <button type="button" class="secondary" @click="closeImportModal()">Cancel</button>
+                    <button @click="importCSV()" :disabled="!importFile || importing">
+                        <span x-show="importing" class="loading" style="width: 16px; height: 16px; margin-right: 8px;"></span>
+                        <span x-text="importing ? 'Importing...' : 'Import'"></span>
+                    </button>
+                </footer>
+            </div>
+
+            <!-- Result State -->
+            <div x-show="importResult">
+                <div style="padding: 16px; border-radius: 8px; margin-bottom: 16px;"
+                     :style="importResult?.error ? 'background: rgba(248, 81, 73, 0.1); border: 1px solid rgba(248, 81, 73, 0.3)' : 'background: rgba(63, 185, 80, 0.1); border: 1px solid rgba(63, 185, 80, 0.3)'">
+
+                    <!-- Error result -->
+                    <template x-if="importResult?.error">
+                        <div>
+                            <div style="font-weight: 600; color: var(--red); margin-bottom: 8px;">Import Failed</div>
+                            <div x-text="importResult.error"></div>
+                        </div>
+                    </template>
+
+                    <!-- Success result -->
+                    <template x-if="importResult?.import">
+                        <div>
+                            <div style="font-weight: 600; color: var(--green); margin-bottom: 12px;" x-text="importResult.message"></div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+                                <div>
+                                    <span style="color: var(--pico-muted-color);">Broker:</span>
+                                    <span x-text="importResult.import.broker.charAt(0).toUpperCase() + importResult.import.broker.slice(1)" style="font-weight: 500;"></span>
+                                </div>
+                                <div>
+                                    <span style="color: var(--pico-muted-color);">Holdings:</span>
+                                    <span x-text="importResult.import.total_holdings" style="font-weight: 500;"></span>
+                                </div>
+                                <div>
+                                    <span style="color: var(--pico-muted-color);">New:</span>
+                                    <span x-text="importResult.import.created" style="font-weight: 500; color: var(--green);"></span>
+                                </div>
+                                <div>
+                                    <span style="color: var(--pico-muted-color);">Updated:</span>
+                                    <span x-text="importResult.import.updated" style="font-weight: 500; color: var(--pico-primary);"></span>
+                                </div>
+                            </div>
+                            <div x-show="importResult.import.accounts && importResult.import.accounts.length > 0" style="margin-bottom: 12px;">
+                                <span style="color: var(--pico-muted-color);">Accounts:</span>
+                                <div style="margin-top: 4px;">
+                                    <template x-for="acc in importResult.import.accounts" :key="acc">
+                                        <span style="display: inline-block; background: rgba(88, 166, 255, 0.15); color: var(--pico-primary); padding: 2px 8px; border-radius: 4px; margin: 2px; font-size: 0.85em;" x-text="acc"></span>
+                                    </template>
+                                </div>
+                            </div>
+                            <div x-show="importResult.import.skipped && importResult.import.skipped.length > 0">
+                                <span style="color: var(--pico-muted-color); font-size: 0.85em;">Skipped:</span>
+                                <span style="font-size: 0.85em; color: var(--pico-muted-color);" x-text="importResult.import.skipped.join(', ')"></span>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+
+                <footer style="display: flex; gap: 8px; justify-content: flex-end;">
+                    <button @click="closeImportModal()">Done</button>
+                </footer>
+            </div>
+        </article>
+    </dialog>
+
     <!-- Toast Notifications -->
     <div class="toast-container">
         <template x-for="toast in toasts" :key="toast.id">
@@ -1775,6 +1871,11 @@ requireAuth();
                 backoffMultiplier: 1,
                 // Benchmark data
                 benchmarks: {},
+                // CSV Import state
+                showImportModal: false,
+                importFile: null,
+                importing: false,
+                importResult: null,
 
                 get isMarketOpen() {
                     const now = new Date();
@@ -2602,6 +2703,42 @@ requireAuth();
                 exportPortfolio() {
                     window.location.href = 'api.php?action=export&format=csv';
                     this.showToast('Downloading portfolio CSV...', 'success');
+                },
+
+                // Import CSV Methods
+                closeImportModal() {
+                    this.showImportModal = false;
+                    this.importFile = null;
+                    this.importing = false;
+                    this.importResult = null;
+                },
+
+                async importCSV() {
+                    if (!this.importFile) return;
+                    this.importing = true;
+                    this.importResult = null;
+
+                    try {
+                        const formData = new FormData();
+                        formData.append('csv_file', this.importFile);
+
+                        const res = await fetch('api.php?action=importCSV', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        const data = await res.json();
+
+                        if (res.ok && data.import) {
+                            this.importResult = data;
+                            this.showToast(data.message || 'Import successful', 'success');
+                            await this.loadStocks();
+                        } else {
+                            this.importResult = { error: data.error || 'Import failed' };
+                        }
+                    } catch (e) {
+                        this.importResult = { error: 'Failed to upload file. Please try again.' };
+                    }
+                    this.importing = false;
                 }
             };
         }
