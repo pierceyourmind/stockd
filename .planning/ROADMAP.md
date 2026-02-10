@@ -27,11 +27,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. Visiting any page or API endpoint without credentials returns a login challenge (not app content)
   2. SnapTrade API keys are loaded from .env file and never appear in source code
   3. A test call to the SnapTrade API (e.g., registerUser) succeeds and returns a valid response
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 01-01: Authentication gate and credential management
-- [ ] 01-02: Composer setup, SnapTrade SDK install, and database schema migration
+- [ ] 01-01-PLAN.md -- Authentication gate with session-based login/logout and auth checks on api.php + index.php
+- [ ] 01-02-PLAN.md -- Composer setup, phpdotenv + SnapTrade SDK install, SQLite WAL mode, schema migration, API verification
 
 ### Phase 2: Brokerage Connections
 **Goal**: User can connect all three brokerage accounts through SnapTrade OAuth and see their sub-accounts listed
@@ -84,7 +84,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Security & SDK Foundation | 0/2 | Not started | - |
+| 1. Security & SDK Foundation | 0/2 | Planned | - |
 | 2. Brokerage Connections | 0/2 | Not started | - |
 | 3. Holdings Sync & Display | 0/3 | Not started | - |
 | 4. Error Handling & Resilience | 0/1 | Not started | - |
