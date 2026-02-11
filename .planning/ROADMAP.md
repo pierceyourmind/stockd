@@ -61,7 +61,7 @@ Plans:
 
 **Milestone Goal:** Add portfolio analytics (performance tracking, allocation insights, income projections) and batch manual entry.
 
-#### Phase 8: Refactoring
+#### Phase 8: Refactoring ✓
 **Goal**: Extract monolithic API into modular structure before adding analytics
 **Depends on**: Phase 7
 **Requirements**: REFAC-01, REFAC-02, REFAC-03
@@ -73,8 +73,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 08-01-PLAN.md — Extract shared utilities to lib/ (database, yahoo, helpers, csv-parsers)
-- [ ] 08-02-PLAN.md — Extract endpoint functions to modules/ and reduce api.php to router
+- [x] 08-01-PLAN.md — Extract shared utilities to lib/ (database, yahoo, helpers, csv-parsers)
+- [x] 08-02-PLAN.md — Extract endpoint functions to modules/ and reduce api.php to router
 
 #### Phase 9: Snapshots Foundation
 **Goal**: Database schema and snapshot generation infrastructure for historical tracking
@@ -147,15 +147,15 @@ Phases execute in numeric order: 8 → 9 → 10 → 11 → 12
 | 5. SnapTrade Removal | v1.1 | 1/1 | Complete | 2026-02-10 |
 | 6. CSV Import Engine | v1.1 | 2/2 | Complete | 2026-02-10 |
 | 7. Re-Import & Data Management | v1.1 | 1/1 | Complete | 2026-02-11 |
-| 8. Refactoring | v1.2 | 0/0 | Not started | - |
+| 8. Refactoring | v1.2 | 2/2 | Complete | 2026-02-11 |
 | 9. Snapshots Foundation | v1.2 | 0/0 | Not started | - |
 | 10. Historical Analytics | v1.2 | 0/0 | Not started | - |
 | 11. Allocation & Risk | v1.2 | 0/0 | Not started | - |
 | 12. Polish | v1.2 | 0/0 | Not started | - |
 
-**Overall:** 5 phases complete, 5 phases pending
+**Overall:** 6 phases complete, 4 phases pending
 
 ---
 
 *Roadmap created: 2026-02-09*
-*Last updated: 2026-02-11 (v1.2 phases 8-12 added)*
+*Last updated: 2026-02-11 (Phase 8 complete)*
