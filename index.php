@@ -1126,6 +1126,65 @@ requireAuth();
             font-weight: 500;
         }
 
+        /* Portfolio Dividend Income Section */
+        .portfolio-dividend-year {
+            margin-bottom: 1.5rem;
+            border-left: 3px solid var(--green);
+            padding-left: 1rem;
+        }
+
+        .year-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+            font-size: 1.1rem;
+        }
+
+        .year-total {
+            color: var(--green);
+            font-weight: 600;
+        }
+
+        .dividend-months {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 0.5rem;
+            margin-left: 1rem;
+        }
+
+        .dividend-month {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.25rem 0.5rem;
+            background: var(--pico-card-background-color);
+            border-radius: 4px;
+            font-size: 0.85rem;
+        }
+
+        .dividend-month .month-name {
+            color: var(--pico-muted-color);
+        }
+
+        .dividend-month .month-amount {
+            color: var(--green);
+            font-weight: 500;
+        }
+
+        .portfolio-dividends-container {
+            padding: 16px;
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+
+        .portfolio-dividends-container h3 {
+            margin-top: 0;
+            margin-bottom: 1rem;
+            font-size: 1.2rem;
+        }
+
         /* Export Button */
         .export-btn {
             display: flex;
@@ -1329,6 +1388,44 @@ requireAuth();
                 <div class="portfolio-chart-wrapper">
                     <canvas id="allocation-by-account-chart"></canvas>
                 </div>
+            </div>
+        </div>
+
+        <!-- Portfolio Dividend Income Toggle -->
+        <button class="chart-toggle-btn"
+                :class="{ active: showPortfolioDividends }"
+                @click="togglePortfolioDividends()"
+                x-show="stocks.length > 0">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+            </svg>
+            <span x-text="showPortfolioDividends ? 'Hide Portfolio Dividend Income' : 'Show Portfolio Dividend Income'"></span>
+        </button>
+
+        <!-- Portfolio Dividend Income -->
+        <div class="portfolio-dividends-container" x-show="showPortfolioDividends && stocks.length > 0" x-collapse>
+            <h3>Portfolio Dividend Income</h3>
+            <div class="news-loading" x-show="portfolioDividendsLoading">Loading portfolio dividend data...</div>
+            <div x-show="!portfolioDividendsLoading && portfolioDividendData && Object.keys(portfolioDividendData.yearly || {}).length === 0">
+                <p style="color: var(--pico-muted-color); font-size: 0.9rem;">No dividend data found for your holdings.</p>
+            </div>
+            <div x-show="!portfolioDividendsLoading && portfolioDividendData && Object.keys(portfolioDividendData.yearly || {}).length > 0">
+                <template x-for="year in Object.keys(portfolioDividendData.yearly || {}).sort().reverse()" :key="year">
+                    <div class="portfolio-dividend-year">
+                        <h4 class="year-header">
+                            <span x-text="year"></span>
+                            <span class="year-total" x-text="'$' + portfolioDividendData.yearly[year].total.toFixed(2)"></span>
+                        </h4>
+                        <div class="dividend-months">
+                            <template x-for="month in Object.keys(portfolioDividendData.yearly[year].months)" :key="month">
+                                <div class="dividend-month">
+                                    <span class="month-name" x-text="month"></span>
+                                    <span class="month-amount" x-text="'$' + portfolioDividendData.yearly[year].months[month].toFixed(2)"></span>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </template>
             </div>
         </div>
 
@@ -1922,6 +2019,10 @@ requireAuth();
                 importFile: null,
                 importing: false,
                 importResult: null,
+                // Portfolio Dividend Income state
+                showPortfolioDividends: false,
+                portfolioDividendsLoading: false,
+                portfolioDividendData: null,
 
                 get isMarketOpen() {
                     const now = new Date();
@@ -2723,6 +2824,27 @@ requireAuth();
                         stock.news = [];
                     }
                     stock.newsLoading = false;
+                },
+
+                // Portfolio Dividend Income Methods
+                async togglePortfolioDividends() {
+                    this.showPortfolioDividends = !this.showPortfolioDividends;
+                    if (this.showPortfolioDividends && !this.portfolioDividendData) {
+                        await this.loadPortfolioDividends();
+                    }
+                },
+
+                async loadPortfolioDividends() {
+                    this.portfolioDividendsLoading = true;
+                    try {
+                        const res = await fetch('api.php?action=portfolioDividends');
+                        const data = await res.json();
+                        this.portfolioDividendData = data;
+                    } catch (e) {
+                        console.error('Failed to load portfolio dividends', e);
+                        this.portfolioDividendData = { yearly: {} };
+                    }
+                    this.portfolioDividendsLoading = false;
                 },
 
                 // Dividend Methods
