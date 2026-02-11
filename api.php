@@ -65,6 +65,13 @@ try {
         // Column already exists, ignore
     }
 
+    // Migration: add removed_flag column if it doesn't exist
+    try {
+        $pdo->exec("ALTER TABLE stocks ADD COLUMN removed_flag BOOLEAN DEFAULT 0");
+    } catch (PDOException $e) {
+        // Column already exists, ignore
+    }
+
     // Create alerts table if not exists
     $pdo->query("
         CREATE TABLE IF NOT EXISTS alerts (
@@ -410,6 +417,8 @@ match ($action) {
     'update' => updateStock($pdo),
     'delete' => deleteStock($pdo),
     'importCSV' => importCSV($pdo),
+    'dismissFlag' => dismissFlag($pdo),
+    'confirmRemoval' => confirmRemoval($pdo),
     'quote' => getQuote(),
     'history' => getHistory(),
     'alerts' => listAlerts($pdo),
@@ -577,6 +586,7 @@ function importCSV(PDO $pdo): never {
     $created = 0;
     $updated = 0;
     $accounts = [];
+    $importedByAccount = [];
 
     try {
         $pdo->beginTransaction();
@@ -593,6 +603,12 @@ function importCSV(PDO $pdo): never {
                 $accounts[] = $account;
             }
 
+            // Track imported symbols by account
+            if (!isset($importedByAccount[$account])) {
+                $importedByAccount[$account] = [];
+            }
+            $importedByAccount[$account][] = $symbol;
+
             // Check if stock exists with same symbol and account
             $stmt = $pdo->prepare("SELECT id FROM stocks WHERE symbol = ? AND account = ?");
             $stmt->execute([$symbol, $account]);
@@ -602,7 +618,7 @@ function importCSV(PDO $pdo): never {
                 // Update existing stock
                 $stmt = $pdo->prepare("
                     UPDATE stocks
-                    SET company_name = ?, shares = ?, purchase_price = ?, updated_at = CURRENT_TIMESTAMP
+                    SET company_name = ?, shares = ?, purchase_price = ?, removed_flag = 0, updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
                 ");
                 $stmt->execute([$companyName, $shares, $purchasePrice, $existing['id']]);
@@ -620,6 +636,22 @@ function importCSV(PDO $pdo): never {
 
         $pdo->commit();
 
+        // Flag stocks missing from re-import
+        $flagged = 0;
+        foreach ($importedByAccount as $acct => $symbols) {
+            $placeholders = implode(',', array_fill(0, count($symbols), '?'));
+            $stmt = $pdo->prepare("
+                UPDATE stocks
+                SET removed_flag = 1, updated_at = CURRENT_TIMESTAMP
+                WHERE account = ?
+                  AND symbol NOT IN ($placeholders)
+                  AND is_watchlist = 0
+                  AND removed_flag = 0
+            ");
+            $stmt->execute(array_merge([$acct], $symbols));
+            $flagged += $stmt->rowCount();
+        }
+
         $totalHoldings = count($holdings);
         $message = "Successfully imported $totalHoldings holdings ($created new, $updated updated)";
 
@@ -631,11 +663,61 @@ function importCSV(PDO $pdo): never {
                 'skipped' => $skipped,
                 'total_holdings' => $totalHoldings,
                 'accounts' => $accounts,
+                'flagged' => $flagged,
             ],
             'message' => $message,
         ], 201);
     } catch (PDOException $e) {
         $pdo->rollBack();
+        jsonResponse(['error' => 'Database error: ' . $e->getMessage()], 500);
+    }
+}
+
+function dismissFlag(PDO $pdo): never {
+    $id = (int) ($_GET['id'] ?? 0);
+
+    if ($id <= 0) {
+        jsonResponse(['error' => 'Invalid stock ID'], 400);
+    }
+
+    try {
+        $stmt = $pdo->prepare("
+            UPDATE stocks
+            SET removed_flag = 0, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ");
+        $stmt->execute([$id]);
+
+        if ($stmt->rowCount() === 0) {
+            jsonResponse(['error' => 'Stock not found'], 404);
+        }
+
+        jsonResponse(['message' => 'Flag dismissed successfully']);
+    } catch (PDOException $e) {
+        jsonResponse(['error' => 'Database error: ' . $e->getMessage()], 500);
+    }
+}
+
+function confirmRemoval(PDO $pdo): never {
+    $id = (int) ($_GET['id'] ?? 0);
+
+    if ($id <= 0) {
+        jsonResponse(['error' => 'Invalid stock ID'], 400);
+    }
+
+    try {
+        $stmt = $pdo->prepare("
+            DELETE FROM stocks
+            WHERE id = ? AND removed_flag = 1
+        ");
+        $stmt->execute([$id]);
+
+        if ($stmt->rowCount() === 0) {
+            jsonResponse(['error' => 'Stock not found or not flagged'], 404);
+        }
+
+        jsonResponse(['message' => 'Stock removed successfully']);
+    } catch (PDOException $e) {
         jsonResponse(['error' => 'Database error: ' . $e->getMessage()], 500);
     }
 }
