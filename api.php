@@ -53,5 +53,7 @@ match ($action) {
     'dividends' => getDividends($pdo),
     'export' => exportData($pdo),
     'portfolioDividends' => portfolioDividends($pdo),
+    'generateSnapshot' => generateSnapshot($pdo),
+    'snapshots' => getSnapshots($pdo),
     default => jsonResponse(['error' => 'Invalid action'], 400),
 };
