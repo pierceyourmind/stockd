@@ -16,7 +16,7 @@ See: .planning/PROJECT.md (updated 2026-02-11)
 
 **Progress:** All v1.1 phases complete (5-7)
 
-**Last activity:** 2026-02-11 — v1.1 milestone archived
+**Last activity:** 2026-02-11 — Completed quick task 1: Aggregate duplicate symbols in allocation chart
 
 **Next action:** `/gsd:new-milestone` to start next milestone
 
@@ -50,6 +50,12 @@ Decisions are logged in PROJECT.md Key Decisions table.
 ### Blockers/Concerns
 
 None currently.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 1 | Aggregate duplicate symbols in allocation chart | 2026-02-11 | fb79ee5 | [1-make-allocation-by-stock-chart-combine-s](./quick/1-make-allocation-by-stock-chart-combine-s/) |
 
 ## Session Continuity
 
