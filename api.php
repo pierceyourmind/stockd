@@ -3,6 +3,10 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/auth/session.php';
+require_once __DIR__ . '/lib/helpers.php';
+require_once __DIR__ . '/lib/database.php';
+require_once __DIR__ . '/lib/yahoo.php';
+require_once __DIR__ . '/lib/csv-parsers.php';
 
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
@@ -17,395 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 requireAuth();
 
 // Database setup
-$dbPath = __DIR__ . '/db/stocks.db';
-$dbDir = dirname($dbPath);
-
-if (!is_dir($dbDir)) {
-    mkdir($dbDir, 0755, true);
-}
-
-try {
-    $pdo = new PDO("sqlite:$dbPath", null, null, [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-    ]);
-
-    // Enable WAL mode for concurrent read/write access
-    $pdo->exec('PRAGMA journal_mode=WAL');
-    // Wait up to 5 seconds for locks instead of failing immediately
-    $pdo->exec('PRAGMA busy_timeout=5000');
-
-    // Create table if not exists
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS stocks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            symbol VARCHAR(10) NOT NULL,
-            company_name VARCHAR(100) NOT NULL,
-            account VARCHAR(50),
-            purchase_price DECIMAL(10,2),
-            shares DECIMAL(10,4),
-            notes TEXT,
-            is_watchlist BOOLEAN DEFAULT 0,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    ");
-
-    // Migration: add is_watchlist column if it doesn't exist
-    try {
-        $pdo->exec("ALTER TABLE stocks ADD COLUMN is_watchlist BOOLEAN DEFAULT 0");
-    } catch (PDOException $e) {
-        // Column already exists, ignore
-    }
-
-    // Migration: add account column if it doesn't exist (ignore error if exists)
-    try {
-        $pdo->exec("ALTER TABLE stocks ADD COLUMN account VARCHAR(50)");
-    } catch (PDOException $e) {
-        // Column already exists, ignore
-    }
-
-    // Migration: add removed_flag column if it doesn't exist
-    try {
-        $pdo->exec("ALTER TABLE stocks ADD COLUMN removed_flag BOOLEAN DEFAULT 0");
-    } catch (PDOException $e) {
-        // Column already exists, ignore
-    }
-
-    // Create alerts table if not exists
-    $pdo->query("
-        CREATE TABLE IF NOT EXISTS alerts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            stock_id INTEGER,
-            symbol VARCHAR(10) NOT NULL,
-            condition VARCHAR(10) NOT NULL,
-            target_price DECIMAL(10,2) NOT NULL,
-            triggered BOOLEAN DEFAULT 0,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (stock_id) REFERENCES stocks(id) ON DELETE CASCADE
-        )
-    ");
-
-    // Migration: remove UNIQUE constraint by recreating table
-    // Check if unique constraint exists by looking at table schema
-    $schema = $pdo->query("SELECT sql FROM sqlite_master WHERE type='table' AND name='stocks'")->fetchColumn();
-    if ($schema && stripos($schema, 'UNIQUE') !== false) {
-        $pdo->exec("
-            CREATE TABLE stocks_new (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                symbol VARCHAR(10) NOT NULL,
-                company_name VARCHAR(100) NOT NULL,
-                account VARCHAR(50),
-                purchase_price DECIMAL(10,2),
-                shares DECIMAL(10,4),
-                notes TEXT,
-                is_watchlist BOOLEAN DEFAULT 0,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        ");
-        $pdo->exec("
-            INSERT INTO stocks_new (id, symbol, company_name, account, purchase_price, shares, notes, is_watchlist, created_at, updated_at)
-            SELECT id, symbol, company_name, account, purchase_price, shares, notes, COALESCE(is_watchlist, 0), created_at, updated_at FROM stocks
-        ");
-        $pdo->exec("DROP TABLE stocks");
-        $pdo->exec("ALTER TABLE stocks_new RENAME TO stocks");
-    }
-
-    // Create dividends table for dividend tracking
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS dividends (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            stock_id INTEGER NOT NULL,
-            symbol VARCHAR(10) NOT NULL,
-            amount DECIMAL(10,4) NOT NULL,
-            ex_date DATE,
-            pay_date DATE,
-            record_date DATE,
-            dividend_type VARCHAR(20) DEFAULT 'regular',
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (stock_id) REFERENCES stocks(id) ON DELETE CASCADE
-        )
-    ");
-
-    // Drop SnapTrade tables (one-time migration)
-    $pdo->exec("DROP TABLE IF EXISTS connections");
-    $pdo->exec("DROP TABLE IF EXISTS positions");
-    $pdo->exec("DROP TABLE IF EXISTS sync_log");
-    $pdo->exec("DROP TABLE IF EXISTS snaptrade_users");
-    $pdo->exec("DROP TABLE IF EXISTS accounts");
-} catch (PDOException $e) {
-    jsonResponse(['error' => 'Database connection failed: ' . $e->getMessage()], 500);
-}
-
-// CSV Import Functions
-
-/**
- * Clean numeric strings by removing $, %, +, commas
- * Convert null indicators (--, n/a, N/A, empty) to null
- */
-function cleanNumeric(?string $value): ?float {
-    if ($value === null || $value === '' || $value === '--' || strtolower(trim($value)) === 'n/a') {
-        return null;
-    }
-
-    $cleaned = preg_replace('/[\$,%+]/', '', trim($value));
-    $cleaned = str_replace(',', '', $cleaned);
-
-    return is_numeric($cleaned) ? (float) $cleaned : null;
-}
-
-/**
- * Parse Fidelity CSV format (16 columns)
- * Columns: Account Name/Number, Symbol, Description, Quantity, Last Price, Last Price Change,
- *          Current Value, Today's Gain/Loss Dollar, Today's Gain/Loss Percent, Total Gain/Loss Dollar,
- *          Total Gain/Loss Percent, Percent Of Account, Cost Basis Total, Average Cost Basis, Type, Lot Date
- */
-function parseFidelityCSV(string $csvContent): array {
-    $rawLines = explode("\n", trim($csvContent));
-    $holdings = [];
-    $skipped = [];
-
-    // Detect delimiter: Fidelity uses tab-separated values
-    $delimiter = (strpos($rawLines[0] ?? '', "\t") !== false) ? "\t" : ",";
-
-    // Parse lines with detected delimiter
-    $lines = array_map(function($line) use ($delimiter) {
-        return str_getcsv($line, $delimiter);
-    }, $rawLines);
-
-    // First row is header, skip it
-    $header = array_shift($lines);
-
-    // Determine column layout: "Account Number","Account Name" (2 cols) vs "Account Name/Number" (1 col)
-    $hasAccountNumber = (stripos($header[0] ?? '', 'Account Number') !== false);
-    $colOffset = $hasAccountNumber ? 1 : 0; // Extra column shifts indices by 1
-
-    // Column indices (with offset for 2-column account format)
-    $colAccountName = $hasAccountNumber ? 1 : 0;
-    $colSymbol = 1 + $colOffset;
-    $colDescription = 2 + $colOffset;
-    $colQuantity = 3 + $colOffset;
-    $colAvgCostBasis = 13 + $colOffset;
-    $minCols = 15 + $colOffset;
-
-    foreach ($lines as $row) {
-        if (count($row) < $minCols) {
-            continue;
-        }
-
-        $symbol = trim($row[$colSymbol]);
-        // Strip trailing ** (Fidelity marks some symbols like SPAXX**)
-        $symbol = rtrim($symbol, '*');
-        $description = trim($row[$colDescription]);
-
-        // Skip empty symbols, pending activity, totals rows
-        if ($symbol === '' || stripos($symbol, 'Pending') !== false) {
-            continue;
-        }
-
-        // Skip cash positions (money market funds, cash)
-        $cashSymbols = ['SPAXX', 'FDRXX', 'CORE', 'FCASH', 'FZFXX'];
-        if (stripos($description, 'CASH') !== false ||
-            stripos($description, 'MONEY MARKET') !== false ||
-            in_array($symbol, $cashSymbols)) {
-            $skipped[] = "$symbol (money market/cash)";
-            continue;
-        }
-
-        $account = 'Fidelity ' . trim($row[$colAccountName]);
-        $shares = cleanNumeric($row[$colQuantity]);
-        $purchasePrice = cleanNumeric($row[$colAvgCostBasis]);
-        $companyName = $description;
-
-        // Skip if shares is 0 or null
-        if ($shares === null || $shares <= 0) {
-            continue;
-        }
-
-        $holdings[] = [
-            'symbol' => $symbol,
-            'company_name' => $companyName,
-            'shares' => $shares,
-            'purchase_price' => $purchasePrice,
-            'account' => $account,
-        ];
-    }
-
-    return [
-        'holdings' => $holdings,
-        'skipped' => $skipped,
-    ];
-}
-
-/**
- * Parse Schwab CSV format (tab-separated, ~15 columns)
- * Format: Metadata line with account name, blank line, column headers, data rows, cash row, totals row
- * Metadata: "Positions for account {Account Name} as of {date}"
- * Columns: Symbol, Description, Qty, Price, Price Chng $, Price Chng %, Mkt Val,
- *          Day Chng $, Day Chng %, Cost Basis, Gain $, Gain %, Reinvest?, Reinvest Cap Gains?, Security Type
- */
-function parseSchwabCSV(string $csvContent): array {
-    $rawLines = explode("\n", trim($csvContent));
-    $holdings = [];
-    $skipped = [];
-    $currentAccount = null;
-    $headerFound = false;
-
-    // Detect delimiter — check first few lines (metadata line may not have tabs)
-    $delimiter = ",";
-    foreach (array_slice($rawLines, 0, 5) as $checkLine) {
-        if (strpos($checkLine, "\t") !== false) {
-            $delimiter = "\t";
-            break;
-        }
-    }
-
-    $lines = array_map(function($line) use ($delimiter) {
-        return str_getcsv($line, $delimiter);
-    }, $rawLines);
-
-    foreach ($lines as $row) {
-        // Skip empty rows
-        if (empty($row) || (count($row) === 1 && trim($row[0] ?? '') === '')) {
-            continue;
-        }
-
-        $firstCol = trim($row[0] ?? '');
-
-        // Extract account name from metadata line: "Positions for account {name} as of {date}"
-        if (stripos($firstCol, 'Positions for') !== false) {
-            if (preg_match('/Positions for (?:account\s+)?(.+?)\s+as of/i', $firstCol, $matches)) {
-                $currentAccount = 'Schwab ' . trim($matches[1]);
-            }
-            continue;
-        }
-
-        // Detect column header row (starts with "Symbol")
-        if ($firstCol === 'Symbol') {
-            $headerFound = true;
-            continue;
-        }
-
-        // Skip until we have a header
-        if (!$headerFound) {
-            continue;
-        }
-
-        // Data rows need at least a few columns
-        if (count($row) < 10) {
-            continue;
-        }
-
-        $symbol = trim($row[0] ?? '');
-        $description = trim($row[1] ?? '');
-        $quantity = cleanNumeric($row[2] ?? null);
-        $costBasis = cleanNumeric($row[9] ?? null); // Total cost basis
-
-        // Skip empty symbols, totals, cash positions
-        if ($symbol === '' ||
-            stripos($symbol, 'Account Total') !== false ||
-            stripos($symbol, 'Cash & Cash Investments') !== false ||
-            stripos($description, 'Cash & Cash Investments') !== false ||
-            $quantity === null ||
-            $quantity <= 0) {
-            if ($symbol !== '' && $symbol !== '--') {
-                $skipped[] = "$symbol (cash/total/zero quantity)";
-            }
-            continue;
-        }
-
-        // Calculate purchase price (cost basis per share)
-        $purchasePrice = null;
-        if ($costBasis !== null && $quantity > 0) {
-            $purchasePrice = $costBasis / $quantity;
-        }
-
-        // Use current account or default
-        $account = $currentAccount ?? 'Schwab Account';
-
-        $holdings[] = [
-            'symbol' => $symbol,
-            'company_name' => $description,
-            'shares' => $quantity,
-            'purchase_price' => $purchasePrice,
-            'account' => $account,
-        ];
-    }
-
-    return [
-        'holdings' => $holdings,
-        'skipped' => $skipped,
-    ];
-}
-
-/**
- * Auto-detect broker format and parse CSV
- * Returns: ['broker' => 'fidelity'|'schwab', 'holdings' => [...], 'skipped' => [...]]
- * Or: ['error' => 'description'] on failure
- */
-function parseCSV(string $csvContent): array {
-    if (empty(trim($csvContent))) {
-        return ['error' => 'CSV content is empty'];
-    }
-
-    $lines = explode("\n", $csvContent);
-
-    // Auto-detect broker
-    $firstLines = array_slice($lines, 0, 5);
-    $isFidelity = false;
-    $isSchwab = false;
-
-    foreach ($firstLines as $line) {
-        // Fidelity: Tab-separated, header contains "Account Number" or "Account Name/Number"
-        if (stripos($line, 'Account Number') !== false || stripos($line, 'Account Name/Number') !== false) {
-            $isFidelity = true;
-            break;
-        }
-
-        // Schwab: Has metadata lines like "Positions for All-Accounts" or section headers
-        if (stripos($line, 'Positions for') !== false ||
-            stripos($line, 'as of') !== false) {
-            $isSchwab = true;
-        }
-    }
-
-    // If not detected yet, try tab-delimited detection then comma-delimited
-    if (!$isFidelity && !$isSchwab) {
-        foreach ($lines as $line) {
-            // Try tab-delimited first (Fidelity)
-            $tabCols = explode("\t", $line);
-            if (count($tabCols) >= 16 && stripos($tabCols[0], 'Account') !== false) {
-                $isFidelity = true;
-                break;
-            }
-            // Try comma-delimited (Schwab)
-            $row = str_getcsv($line);
-            if (count($row) >= 20) {
-                $isSchwab = true;
-                break;
-            }
-        }
-    }
-
-    if ($isFidelity) {
-        $result = parseFidelityCSV($csvContent);
-        return [
-            'broker' => 'fidelity',
-            'holdings' => $result['holdings'],
-            'skipped' => $result['skipped'],
-        ];
-    } elseif ($isSchwab) {
-        $result = parseSchwabCSV($csvContent);
-        return [
-            'broker' => 'schwab',
-            'holdings' => $result['holdings'],
-            'skipped' => $result['skipped'],
-        ];
-    } else {
-        return ['error' => 'Unable to detect broker format. Supported formats: Fidelity, Schwab'];
-    }
-}
+$pdo = getDatabase();
 
 // Routing
 $action = $_GET['action'] ?? '';
@@ -432,13 +48,6 @@ match ($action) {
     'portfolioDividends' => portfolioDividends($pdo),
     default => jsonResponse(['error' => 'Invalid action'], 400),
 };
-
-// Response helper
-function jsonResponse(array $data, int $status = 200): never {
-    http_response_code($status);
-    echo json_encode($data);
-    exit;
-}
 
 // CRUD Operations
 function listStocks(PDO $pdo): never {
@@ -730,13 +339,7 @@ function getQuote(): never {
         jsonResponse(['error' => 'Symbol is required'], 400);
     }
 
-    $context = stream_context_create([
-        'http' => [
-            'method' => 'GET',
-            'header' => "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\r\n",
-            'timeout' => 15,
-        ],
-    ]);
+    $context = yahooContext();
 
     // Fetch 5-year data to calculate all periods
     $url = "https://query1.finance.yahoo.com/v8/finance/chart/" . urlencode($symbol) . "?interval=1d&range=5y";
@@ -856,39 +459,6 @@ function getQuote(): never {
     ]);
 }
 
-function findClosestPrice(array $timestamps, array $closes, int $targetTime): ?float {
-    if (empty($timestamps) || empty($closes)) {
-        return null;
-    }
-
-    $closestIdx = 0;
-    $closestDiff = PHP_INT_MAX;
-
-    foreach ($timestamps as $idx => $ts) {
-        $diff = abs($ts - $targetTime);
-        if ($diff < $closestDiff) {
-            $closestDiff = $diff;
-            $closestIdx = $idx;
-        }
-    }
-
-    // Return the close price, skipping nulls
-    $price = $closes[$closestIdx] ?? null;
-    if ($price === null) {
-        // Try nearby indices if this one is null
-        for ($i = 1; $i <= 5; $i++) {
-            if (isset($closes[$closestIdx + $i]) && $closes[$closestIdx + $i] !== null) {
-                return (float) $closes[$closestIdx + $i];
-            }
-            if (isset($closes[$closestIdx - $i]) && $closes[$closestIdx - $i] !== null) {
-                return (float) $closes[$closestIdx - $i];
-            }
-        }
-    }
-
-    return $price !== null ? (float) $price : null;
-}
-
 function getHistory(): never {
     $symbol = strtoupper(trim($_GET['symbol'] ?? ''));
     $range = $_GET['range'] ?? '1m';
@@ -909,13 +479,7 @@ function getHistory(): never {
 
     $config = $rangeConfig[$range] ?? $rangeConfig['1m'];
 
-    $context = stream_context_create([
-        'http' => [
-            'method' => 'GET',
-            'header' => "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\r\n",
-            'timeout' => 15,
-        ],
-    ]);
+    $context = yahooContext();
 
     $url = "https://query1.finance.yahoo.com/v8/finance/chart/" . urlencode($symbol)
          . "?interval=" . $config['interval'] . "&range=" . $config['range'];
@@ -1072,13 +636,7 @@ function getNews(): never {
         jsonResponse(['error' => 'Symbol is required'], 400);
     }
 
-    $context = stream_context_create([
-        'http' => [
-            'method' => 'GET',
-            'header' => "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\r\n",
-            'timeout' => 10,
-        ],
-    ]);
+    $context = yahooContext(10);
 
     // Use Yahoo Finance search API for news
     $url = "https://query1.finance.yahoo.com/v1/finance/search?q=" . urlencode($symbol) . "&newsCount=5&quotesCount=0";
@@ -1116,13 +674,7 @@ function getBenchmark(): never {
         '^DJI' => 'Dow Jones',
     ];
 
-    $context = stream_context_create([
-        'http' => [
-            'method' => 'GET',
-            'header' => "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\r\n",
-            'timeout' => 15,
-        ],
-    ]);
+    $context = yahooContext();
 
     $rangeConfig = [
         '1d' => '1d',
@@ -1207,13 +759,7 @@ function getDividends(PDO $pdo): never {
         jsonResponse(['error' => 'Symbol or stock_id is required'], 400);
     }
 
-    $context = stream_context_create([
-        'http' => [
-            'method' => 'GET',
-            'header' => "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\r\n",
-            'timeout' => 15,
-        ],
-    ]);
+    $context = yahooContext();
 
     // Fetch dividend data from Yahoo Finance
     $url = "https://query1.finance.yahoo.com/v8/finance/chart/" . urlencode($symbol) . "?interval=1d&range=5y&events=div";
@@ -1266,13 +812,7 @@ function portfolioDividends(PDO $pdo): never {
     $stmt = $pdo->query("SELECT * FROM stocks WHERE is_watchlist = 0 AND shares > 0 AND symbol != 'LIHKX'");
     $holdings = $stmt->fetchAll();
 
-    $context = stream_context_create([
-        'http' => [
-            'method' => 'GET',
-            'header' => "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\r\n",
-            'timeout' => 15,
-        ],
-    ]);
+    $context = yahooContext();
 
     $yearly = [];
 
