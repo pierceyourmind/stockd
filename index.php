@@ -2450,12 +2450,12 @@ requireAuth();
                     // Allocation by Stock Chart
                     const stockCanvas = document.getElementById('allocation-by-stock-chart');
                     if (stockCanvas) {
-                        const stockData = this.stocks
-                            .filter(s => s.quote && s.shares)
-                            .map(s => ({
-                                label: s.symbol,
-                                value: s.quote.price * parseFloat(s.shares)
-                            }))
+                        const stockTotals = {};
+                        this.stocks.filter(s => s.quote && s.shares).forEach(s => {
+                            stockTotals[s.symbol] = (stockTotals[s.symbol] || 0) + (s.quote.price * parseFloat(s.shares));
+                        });
+                        const stockData = Object.entries(stockTotals)
+                            .map(([symbol, value]) => ({ label: symbol, value }))
                             .sort((a, b) => b.value - a.value);
 
                         if (stockData.length > 0) {
