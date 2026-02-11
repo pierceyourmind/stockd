@@ -180,6 +180,40 @@ requireAuth();
             display: inline-block;
         }
 
+        .stock-card.flagged-removal {
+            border: 1px solid rgba(248, 81, 73, 0.4);
+            background: rgba(248, 81, 73, 0.05);
+        }
+
+        .removed-flag-banner {
+            background: rgba(248, 81, 73, 0.12);
+            border: 1px solid rgba(248, 81, 73, 0.3);
+            border-radius: 6px;
+            padding: 8px 12px;
+            margin-bottom: 12px;
+            font-size: 0.85em;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .removed-flag-banner .flag-text {
+            color: var(--red);
+        }
+
+        .removed-flag-banner .flag-actions {
+            display: flex;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
+        .removed-flag-banner .flag-actions button {
+            padding: 4px 10px;
+            font-size: 0.8em;
+            margin: 0;
+        }
+
         .stock-price {
             text-align: right;
         }
@@ -1358,7 +1392,7 @@ requireAuth();
         <!-- Stock Cards Grid -->
         <div class="stocks-grid" x-show="!loading && stocks.length > 0">
             <template x-for="stock in filteredStocks" :key="stock.id">
-                <article class="stock-card" :class="{ 'price-flash': stock.priceChanged, 'up': stock.priceUp, 'down': !stock.priceUp }">
+                <article class="stock-card" :class="{ 'price-flash': stock.priceChanged, 'up': stock.priceUp, 'down': !stock.priceUp, 'flagged-removal': stock.removed_flag }">
                     <div class="stock-card-header">
                         <div>
                             <div class="stock-symbol">
@@ -1381,6 +1415,14 @@ requireAuth();
                                 <span x-text="getStockAlerts(stock.id).length > 0 ? getStockAlerts(stock.id).length : 'Alert'"></span>
                             </button>
                         </div>
+                    </div>
+
+                    <div class="removed-flag-banner" x-show="stock.removed_flag">
+                        <span class="flag-text">Not in latest import — remove from portfolio?</span>
+                        <span class="flag-actions">
+                            <button class="secondary outline" style="color: var(--red); border-color: var(--red);" @click="confirmFlaggedRemoval(stock)">Remove</button>
+                            <button class="secondary outline" @click="dismissFlag(stock)">Keep</button>
+                        </span>
                     </div>
 
                     <!-- Period Changes Grid -->
@@ -1787,6 +1829,10 @@ requireAuth();
                                 <div>
                                     <span style="color: var(--pico-muted-color);">Updated:</span>
                                     <span x-text="importResult.import.updated" style="font-weight: 500; color: var(--pico-primary);"></span>
+                                </div>
+                                <div x-show="importResult?.import?.flagged > 0">
+                                    <span style="color: var(--pico-muted-color);">Flagged for review:</span>
+                                    <span x-text="importResult.import.flagged" style="font-weight: 500; color: var(--red);"></span>
                                 </div>
                             </div>
                             <div x-show="importResult.import.accounts && importResult.import.accounts.length > 0" style="margin-bottom: 12px;">
@@ -2711,6 +2757,46 @@ requireAuth();
                     this.importFile = null;
                     this.importing = false;
                     this.importResult = null;
+                },
+
+                async dismissFlag(stock) {
+                    try {
+                        const response = await fetch(`api.php?action=dismissFlag&id=${stock.id}`, {
+                            method: 'POST'
+                        });
+                        const text = await response.text();
+                        const data = JSON.parse(text);
+
+                        if (response.ok) {
+                            stock.removed_flag = 0;
+                            this.showToast('Flag dismissed', 'success');
+                        } else {
+                            throw new Error(data.error || 'Failed to dismiss flag');
+                        }
+                    } catch (error) {
+                        console.error('Error dismissing flag:', error);
+                        this.showToast(error.message || 'Failed to dismiss flag', 'error');
+                    }
+                },
+
+                async confirmFlaggedRemoval(stock) {
+                    try {
+                        const response = await fetch(`api.php?action=confirmRemoval&id=${stock.id}`, {
+                            method: 'POST'
+                        });
+                        const text = await response.text();
+                        const data = JSON.parse(text);
+
+                        if (response.ok) {
+                            this.stocks = this.stocks.filter(s => s.id !== stock.id);
+                            this.showToast('Stock removed', 'success');
+                        } else {
+                            throw new Error(data.error || 'Failed to remove stock');
+                        }
+                    } catch (error) {
+                        console.error('Error removing stock:', error);
+                        this.showToast(error.message || 'Failed to remove stock', 'error');
+                    }
                 },
 
                 async importCSV() {
