@@ -44,7 +44,20 @@ Portfolio data stays current through simple CSV re-imports from brokers, with ma
 
 <!-- Current scope. Building toward these. -->
 
-(None — planning next milestone)
+## Current Milestone: v1.2 Analytics & SoFi Import
+
+**Goal:** Add portfolio analytics (performance tracking, allocation insights, income projections) and investigate SoFi data import.
+
+**Target features:**
+- Historical portfolio value chart (backfill + daily snapshots)
+- Per-stock return rankings (best/worst performers)
+- Time-based returns (week, month, YTD, since inception, annualized)
+- Sector breakdown allocation
+- Asset class view (stocks vs ETFs vs bonds vs cash)
+- Concentration warnings (overweight alerts)
+- Projected annual dividend income
+- Income by sector breakdown
+- SoFi import (research viability, implement if path exists)
 
 ### Out of Scope
 
@@ -53,7 +66,7 @@ Portfolio data stays current through simple CSV re-imports from brokers, with ma
 - Trading — this is a tracker, not a trading platform
 - Multi-user / authentication beyond basic auth — single-user personal tool
 - SnapTrade / Plaid / direct broker APIs — CSV import is simpler and has no cost or API dependency
-- SoFi import — SoFi doesn't export holdings CSV; deferred until they add it or an alternative emerges
+- SoFi import — Investigating in v1.2; moved from out-of-scope to active research
 - Automated background sync — CSV import is user-initiated
 - Transaction history import — positions snapshot is sufficient; reconstructing from trades is fragile
 
@@ -78,7 +91,7 @@ Stockd is a working stock portfolio tracker shipped through two milestones. The 
 - **Hosting**: Local PHP server
 - **Cost**: Zero — no API keys or paid services
 - **Single-user**: No multi-tenant concerns, basic auth already in place
-- **Broker coverage**: Fidelity and Schwab via CSV (SoFi deferred)
+- **Broker coverage**: Fidelity and Schwab via CSV (SoFi under investigation for v1.2)
 
 ## Key Decisions
 
@@ -99,4 +112,4 @@ Stockd is a working stock portfolio tracker shipped through two milestones. The 
 | One-time DROP TABLE migration | Safe with IF EXISTS; SnapTrade tables contain only SnapTrade data | ✓ Good |
 
 ---
-*Last updated: 2026-02-11 after v1.1 milestone*
+*Last updated: 2026-02-11 after v1.2 milestone started*

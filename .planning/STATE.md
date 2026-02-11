@@ -6,19 +6,14 @@ See: .planning/PROJECT.md (updated 2026-02-11)
 
 **Core value:** Portfolio data stays current through simple CSV re-imports from brokers, with manual entry available for any stock.
 
-**Current focus:** Planning next milestone
+**Current focus:** v1.2 Analytics & SoFi Import
 
 ## Current Position
 
-**Phase:** None active
-**Status:** v1.1 milestone shipped
-**Last milestone:** v1.1 CSV Portfolio Import (shipped 2026-02-11)
-
-**Progress:** All v1.1 phases complete (5-7)
-
-**Last activity:** 2026-02-11 — Completed quick task 3: Portfolio dividend income aggregation
-
-**Next action:** `/gsd:new-milestone` to start next milestone
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-02-11 — Milestone v1.2 started
 
 ## Performance Metrics
 
@@ -62,11 +57,11 @@ None currently.
 ## Session Continuity
 
 **Last session:** 2026-02-11
-**Stopped at:** Completed quick task 3: Portfolio dividend income
-**Next step:** `/gsd:new-milestone` — start next milestone with questioning, research, requirements, and roadmap
-**Resume:** `/gsd:new-milestone`
+**Stopped at:** Milestone v1.2 started, defining requirements
+**Next step:** Complete requirements → roadmap
+**Resume:** Continue new-milestone workflow
 
 ---
 
 *State initialized: 2026-02-09 (v1.0)*
-*Updated: 2026-02-11 (quick task 3 complete)*
+*Updated: 2026-02-11 (v1.2 milestone started)*
