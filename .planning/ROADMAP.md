@@ -19,7 +19,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 5: SnapTrade Removal** - Clean codebase of all SnapTrade dependencies ✓ 2026-02-10
 - [x] **Phase 6: CSV Import Engine** - Upload and parse Fidelity/Schwab CSVs with auto-detection ✓ 2026-02-10
-- [ ] **Phase 7: Re-Import & Data Management** - Update workflow with diff review and manual cost basis editing
+- [x] **Phase 7: Re-Import & Data Management** - Update workflow with diff review and manual cost basis editing ✓ 2026-02-11
 
 ## Phase Details
 
@@ -85,7 +85,7 @@ Plans:
 **Plans:** 1 plan
 
 Plans:
-- [ ] 07-01-PLAN.md -- Re-import diff engine with flagged stock management and human verification (ACCT-02 and COST-02 already satisfied by existing UI)
+- [x] 07-01-PLAN.md -- Re-import diff engine with flagged stock management and human verification (ACCT-02 and COST-02 already satisfied by existing UI) ✓
 
 ---
 
@@ -98,9 +98,9 @@ Phases execute in numeric order: 5 -> 6 -> 7
 |-------|----------------|--------|-----------|
 | 5. SnapTrade Removal | 1/1 | ✓ Complete | 2026-02-10 |
 | 6. CSV Import Engine | 2/2 | ✓ Complete | 2026-02-10 |
-| 7. Re-Import & Data Management | 0/1 | Planned | - |
+| 7. Re-Import & Data Management | 1/1 | ✓ Complete | 2026-02-11 |
 
-**Overall:** 2/3 phases complete
+**Overall:** 3/3 phases complete
 
 ---
 
@@ -123,4 +123,4 @@ All 14 v1.1 requirements mapped to phases:
 ---
 
 *Roadmap created: 2026-02-10*
-*Last updated: 2026-02-10 (Phase 6 complete)*
+*Last updated: 2026-02-11 (Phase 7 complete — milestone v1.1 done)*
