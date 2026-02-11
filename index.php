@@ -2459,10 +2459,11 @@ requireAuth();
                             .sort((a, b) => b.value - a.value);
 
                         if (stockData.length > 0) {
+                            const stockTotal = stockData.reduce((sum, d) => sum + d.value, 0);
                             this.portfolioCharts.byStock = new Chart(stockCanvas.getContext('2d'), {
                                 type: 'doughnut',
                                 data: {
-                                    labels: stockData.map(d => d.label),
+                                    labels: stockData.map(d => `${d.label} ${((d.value / stockTotal) * 100).toFixed(1)}%`),
                                     datasets: [{
                                         data: stockData.map(d => d.value),
                                         backgroundColor: stockData.map((_, i) => colors[i % colors.length]),
