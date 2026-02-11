@@ -2726,7 +2726,9 @@ requireAuth();
                             method: 'POST',
                             body: formData
                         });
-                        const data = await res.json();
+                        const text = await res.text();
+                        let data;
+                        try { data = JSON.parse(text); } catch { data = { error: text || 'Server error' }; }
 
                         if (res.ok && data.import) {
                             this.importResult = data;
@@ -2736,7 +2738,8 @@ requireAuth();
                             this.importResult = { error: data.error || 'Import failed' };
                         }
                     } catch (e) {
-                        this.importResult = { error: 'Failed to upload file. Please try again.' };
+                        console.error('Import error:', e);
+                        this.importResult = { error: 'Upload failed: ' + (e.message || 'Unknown error') };
                     }
                     this.importing = false;
                 }

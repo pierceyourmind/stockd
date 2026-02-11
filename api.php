@@ -155,20 +155,42 @@ function cleanNumeric(?string $value): ?float {
  *          Total Gain/Loss Percent, Percent Of Account, Cost Basis Total, Average Cost Basis, Type, Lot Date
  */
 function parseFidelityCSV(string $csvContent): array {
-    $lines = array_map('str_getcsv', explode("\n", trim($csvContent)));
+    $rawLines = explode("\n", trim($csvContent));
     $holdings = [];
     $skipped = [];
 
+    // Detect delimiter: Fidelity uses tab-separated values
+    $delimiter = (strpos($rawLines[0] ?? '', "\t") !== false) ? "\t" : ",";
+
+    // Parse lines with detected delimiter
+    $lines = array_map(function($line) use ($delimiter) {
+        return str_getcsv($line, $delimiter);
+    }, $rawLines);
+
     // First row is header, skip it
-    array_shift($lines);
+    $header = array_shift($lines);
+
+    // Determine column layout: "Account Number","Account Name" (2 cols) vs "Account Name/Number" (1 col)
+    $hasAccountNumber = (stripos($header[0] ?? '', 'Account Number') !== false);
+    $colOffset = $hasAccountNumber ? 1 : 0; // Extra column shifts indices by 1
+
+    // Column indices (with offset for 2-column account format)
+    $colAccountName = $hasAccountNumber ? 1 : 0;
+    $colSymbol = 1 + $colOffset;
+    $colDescription = 2 + $colOffset;
+    $colQuantity = 3 + $colOffset;
+    $colAvgCostBasis = 13 + $colOffset;
+    $minCols = 15 + $colOffset;
 
     foreach ($lines as $row) {
-        if (count($row) < 16) {
-            continue; // Skip incomplete rows
+        if (count($row) < $minCols) {
+            continue;
         }
 
-        $symbol = trim($row[1]);
-        $description = trim($row[2]);
+        $symbol = trim($row[$colSymbol]);
+        // Strip trailing ** (Fidelity marks some symbols like SPAXX**)
+        $symbol = rtrim($symbol, '*');
+        $description = trim($row[$colDescription]);
 
         // Skip empty symbols, pending activity, totals rows
         if ($symbol === '' || stripos($symbol, 'Pending') !== false) {
@@ -176,16 +198,17 @@ function parseFidelityCSV(string $csvContent): array {
         }
 
         // Skip cash positions (money market funds, cash)
+        $cashSymbols = ['SPAXX', 'FDRXX', 'CORE', 'FCASH', 'FZFXX'];
         if (stripos($description, 'CASH') !== false ||
-            stripos($description, 'FCASH') !== false ||
-            in_array($symbol, ['SPAXX', 'FDRXX', 'CORE'])) {
+            stripos($description, 'MONEY MARKET') !== false ||
+            in_array($symbol, $cashSymbols)) {
             $skipped[] = "$symbol (money market/cash)";
             continue;
         }
 
-        $account = 'Fidelity ' . trim($row[0]);
-        $shares = cleanNumeric($row[3]);
-        $purchasePrice = cleanNumeric($row[13]); // Average Cost Basis
+        $account = 'Fidelity ' . trim($row[$colAccountName]);
+        $shares = cleanNumeric($row[$colQuantity]);
+        $purchasePrice = cleanNumeric($row[$colAvgCostBasis]);
         $companyName = $description;
 
         // Skip if shares is 0 or null
@@ -209,36 +232,46 @@ function parseFidelityCSV(string $csvContent): array {
 }
 
 /**
- * Parse Schwab CSV format (26+ columns with metadata and section headers)
- * Format: Metadata lines, then per-account sections with "Account Name" header, column headers, data rows
- * Data columns: Symbol, Description, Quantity, Price, Price Change $, Price Change %, Market Value,
- *               Day Change $, Day Change %, Cost Basis, Gain/Loss $, Gain/Loss %, ...
+ * Parse Schwab CSV format (tab-separated, ~15 columns)
+ * Format: Metadata line with account name, blank line, column headers, data rows, cash row, totals row
+ * Metadata: "Positions for account {Account Name} as of {date}"
+ * Columns: Symbol, Description, Qty, Price, Price Chng $, Price Chng %, Mkt Val,
+ *          Day Chng $, Day Chng %, Cost Basis, Gain $, Gain %, Reinvest?, Reinvest Cap Gains?, Security Type
  */
 function parseSchwabCSV(string $csvContent): array {
-    $lines = array_map('str_getcsv', explode("\n", trim($csvContent)));
+    $rawLines = explode("\n", trim($csvContent));
     $holdings = [];
     $skipped = [];
     $currentAccount = null;
     $headerFound = false;
 
+    // Detect delimiter — check first few lines (metadata line may not have tabs)
+    $delimiter = ",";
+    foreach (array_slice($rawLines, 0, 5) as $checkLine) {
+        if (strpos($checkLine, "\t") !== false) {
+            $delimiter = "\t";
+            break;
+        }
+    }
+
+    $lines = array_map(function($line) use ($delimiter) {
+        return str_getcsv($line, $delimiter);
+    }, $rawLines);
+
     foreach ($lines as $row) {
         // Skip empty rows
-        if (empty($row) || (count($row) === 1 && trim($row[0]) === '')) {
+        if (empty($row) || (count($row) === 1 && trim($row[0] ?? '') === '')) {
             continue;
         }
 
-        $firstCol = trim($row[0]);
+        $firstCol = trim($row[0] ?? '');
 
-        // Detect section headers (account names like "Brokerage  XXXX-1234")
-        // These are typically standalone lines before the column headers
-        if (!$headerFound && count($row) >= 1 && $firstCol !== '' && $firstCol !== 'Symbol') {
-            // Check if this looks like an account section header (not metadata, not column headers)
-            if (stripos($firstCol, 'Positions') === false &&
-                stripos($firstCol, 'Symbol') === false &&
-                !is_numeric(substr($firstCol, 0, 1))) {
-                $currentAccount = 'Schwab ' . $firstCol;
-                continue;
+        // Extract account name from metadata line: "Positions for account {name} as of {date}"
+        if (stripos($firstCol, 'Positions for') !== false) {
+            if (preg_match('/Positions for (?:account\s+)?(.+?)\s+as of/i', $firstCol, $matches)) {
+                $currentAccount = 'Schwab ' . trim($matches[1]);
             }
+            continue;
         }
 
         // Detect column header row (starts with "Symbol")
@@ -252,23 +285,24 @@ function parseSchwabCSV(string $csvContent): array {
             continue;
         }
 
-        // Data rows must have at least 26 columns
+        // Data rows need at least a few columns
         if (count($row) < 10) {
             continue;
         }
 
-        $symbol = trim($row[0]);
-        $description = trim($row[1]);
-        $quantity = cleanNumeric($row[2]);
-        $costBasis = cleanNumeric($row[9]); // Total cost basis
+        $symbol = trim($row[0] ?? '');
+        $description = trim($row[1] ?? '');
+        $quantity = cleanNumeric($row[2] ?? null);
+        $costBasis = cleanNumeric($row[9] ?? null); // Total cost basis
 
         // Skip empty symbols, totals, cash positions
         if ($symbol === '' ||
             stripos($symbol, 'Account Total') !== false ||
+            stripos($symbol, 'Cash & Cash Investments') !== false ||
             stripos($description, 'Cash & Cash Investments') !== false ||
             $quantity === null ||
             $quantity <= 0) {
-            if ($symbol !== '') {
+            if ($symbol !== '' && $symbol !== '--') {
                 $skipped[] = "$symbol (cash/total/zero quantity)";
             }
             continue;
@@ -316,8 +350,8 @@ function parseCSV(string $csvContent): array {
     $isSchwab = false;
 
     foreach ($firstLines as $line) {
-        // Fidelity: First row is header with "Account Name/Number"
-        if (stripos($line, 'Account Name/Number') !== false) {
+        // Fidelity: Tab-separated, header contains "Account Number" or "Account Name/Number"
+        if (stripos($line, 'Account Number') !== false || stripos($line, 'Account Name/Number') !== false) {
             $isFidelity = true;
             break;
         }
@@ -329,14 +363,18 @@ function parseCSV(string $csvContent): array {
         }
     }
 
-    // If not detected yet, try counting columns in first data row
+    // If not detected yet, try tab-delimited detection then comma-delimited
     if (!$isFidelity && !$isSchwab) {
         foreach ($lines as $line) {
-            $row = str_getcsv($line);
-            if (count($row) >= 16 && stripos($row[0], 'Account') !== false) {
+            // Try tab-delimited first (Fidelity)
+            $tabCols = explode("\t", $line);
+            if (count($tabCols) >= 16 && stripos($tabCols[0], 'Account') !== false) {
                 $isFidelity = true;
                 break;
-            } elseif (count($row) >= 26) {
+            }
+            // Try comma-delimited (Schwab)
+            $row = str_getcsv($line);
+            if (count($row) >= 20) {
                 $isSchwab = true;
                 break;
             }
