@@ -429,6 +429,7 @@ match ($action) {
     'benchmark' => getBenchmark(),
     'dividends' => getDividends($pdo),
     'export' => exportData($pdo),
+    'portfolioDividends' => portfolioDividends($pdo),
     default => jsonResponse(['error' => 'Invalid action'], 400),
 };
 
@@ -1257,6 +1258,79 @@ function getDividends(PDO $pdo): never {
         'dividendYield' => round($dividendYield, 2),
         'source' => 'yahoo',
     ]);
+}
+
+// Get aggregated portfolio dividend income by year and month
+function portfolioDividends(PDO $pdo): never {
+    // Fetch all holdings (exclude watchlist and LIHKX)
+    $stmt = $pdo->query("SELECT * FROM stocks WHERE is_watchlist = 0 AND shares > 0 AND symbol != 'LIHKX'");
+    $holdings = $stmt->fetchAll();
+
+    $context = stream_context_create([
+        'http' => [
+            'method' => 'GET',
+            'header' => "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\r\n",
+            'timeout' => 15,
+        ],
+    ]);
+
+    $yearly = [];
+
+    foreach ($holdings as $holding) {
+        $symbol = $holding['symbol'];
+        $shares = (float) $holding['shares'];
+
+        $url = "https://query1.finance.yahoo.com/v8/finance/chart/" . urlencode($symbol) . "?interval=1d&range=5y&events=div";
+        $response = @file_get_contents($url, false, $context);
+
+        if ($response === false) {
+            // Skip stocks that fail to fetch
+            usleep(100000);
+            continue;
+        }
+
+        $data = json_decode($response, true);
+
+        if (isset($data['chart']['result'][0]['events']['dividends'])) {
+            $divEvents = $data['chart']['result'][0]['events']['dividends'];
+            foreach ($divEvents as $ts => $div) {
+                $amount = round((float) $div['amount'] * $shares, 2);
+                $year = date('Y', (int) $ts);
+                $month = date('M', (int) $ts);
+
+                if (!isset($yearly[$year])) {
+                    $yearly[$year] = ['total' => 0, 'months' => []];
+                }
+                if (!isset($yearly[$year]['months'][$month])) {
+                    $yearly[$year]['months'][$month] = 0;
+                }
+
+                $yearly[$year]['total'] = round($yearly[$year]['total'] + $amount, 2);
+                $yearly[$year]['months'][$month] = round($yearly[$year]['months'][$month] + $amount, 2);
+            }
+        }
+
+        // Small delay to avoid rate limiting
+        usleep(100000);
+    }
+
+    // Sort years descending
+    krsort($yearly);
+
+    // Sort months within each year chronologically
+    $monthOrder = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    foreach ($yearly as &$yearData) {
+        $sortedMonths = [];
+        foreach ($monthOrder as $m) {
+            if (isset($yearData['months'][$m])) {
+                $sortedMonths[$m] = $yearData['months'][$m];
+            }
+        }
+        $yearData['months'] = $sortedMonths;
+    }
+    unset($yearData);
+
+    jsonResponse(['yearly' => $yearly]);
 }
 
 // Export portfolio data as CSV
