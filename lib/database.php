@@ -116,6 +116,33 @@ function getDatabase(): PDO {
             )
         ");
 
+        // Create portfolio_snapshots table for daily portfolio value tracking
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                snapshot_date INTEGER NOT NULL,
+                total_value DECIMAL(12,2) NOT NULL,
+                stock_count INTEGER NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ");
+        $pdo->exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_snapshot_date ON portfolio_snapshots(snapshot_date)");
+
+        // Create sector_cache table for Yahoo Finance metadata caching
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS sector_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol VARCHAR(10) NOT NULL,
+                sector VARCHAR(100),
+                industry VARCHAR(100),
+                cached_at INTEGER NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ");
+        $pdo->exec("CREATE INDEX IF NOT EXISTS idx_sector_symbol ON sector_cache(symbol)");
+        $pdo->exec("CREATE INDEX IF NOT EXISTS idx_sector_cached_at ON sector_cache(cached_at)");
+
         // Drop SnapTrade tables (one-time migration)
         $pdo->exec("DROP TABLE IF EXISTS connections");
         $pdo->exec("DROP TABLE IF EXISTS positions");
