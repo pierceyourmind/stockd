@@ -4,16 +4,17 @@
 
 See: .planning/PROJECT.md (updated 2026-02-11)
 
-**Core value:** Portfolio data stays current through simple CSV re-imports from brokers, with manual entry available for any stock.
-
-**Current focus:** v1.2 Analytics & SoFi Import
+**Core value:** Portfolio data stays current through simple CSV re-imports from brokers, with manual entry available for any stock — no API keys, no OAuth, no third-party dependencies.
+**Current focus:** Phase 8 - Refactoring
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-02-11 — Milestone v1.2 started
+Phase: 8 of 12 (Refactoring)
+Plan: 0 of 0 in current phase (ready to plan)
+Status: Ready to plan
+Last activity: 2026-02-11 — v1.2 roadmap created
+
+Progress: [████░░░░░░] 42% (5 of 12 phases complete)
 
 ## Performance Metrics
 
@@ -32,19 +33,33 @@ Last activity: 2026-02-11 — Milestone v1.2 started
 | 06-csv-import-engine | 2 | 614s | 307s |
 | 07-reimport-data-management | 1 | 1503s | 1503s |
 
+**Recent Trend:**
+- v1.1 completed in 2 days (3 phases, 4 plans)
+- Trend: Stable
+
+*Metrics will continue tracking timing starting with v1.2*
+
 ## Accumulated Context
 
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.
+Recent decisions affecting v1.2:
+
+- Phase 1: SnapTrade abandoned, pivoted to CSV import (core strategy)
+- Phase 5-7: Auto-detect broker format, upsert by symbol+account, flag removed stocks
+- v1.2 planning: Refactor first to prevent monolithic complexity explosion (4,100 → 8,000+ lines)
 
 ### Pending Todos
 
-(None — milestone complete, next milestone not started)
+None yet.
 
 ### Blockers/Concerns
 
-None currently.
+**Research findings to validate during execution:**
+- Yahoo Finance rate limit threshold (research says 100-200 requests, needs real testing)
+- Sector data null rate (research says 20-30%, depends on stock universe)
+- Return calculation labeling (money-weighted vs time-weighted differences)
 
 ### Quick Tasks Completed
 
@@ -57,11 +72,11 @@ None currently.
 ## Session Continuity
 
 **Last session:** 2026-02-11
-**Stopped at:** Milestone v1.2 started, defining requirements
-**Next step:** Complete requirements → roadmap
-**Resume:** Continue new-milestone workflow
+**Stopped at:** v1.2 roadmap created, ready to plan Phase 8
+**Next step:** `/gsd:plan-phase 8`
+**Resume:** None
 
 ---
 
 *State initialized: 2026-02-09 (v1.0)*
-*Updated: 2026-02-11 (v1.2 milestone started)*
+*Updated: 2026-02-11 (v1.2 roadmap created)*
