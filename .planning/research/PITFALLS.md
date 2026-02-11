@@ -1,271 +1,311 @@
-# Pitfalls Research: Brokerage Sync Integration
+# Pitfalls Research: Portfolio Analytics & SoFi Import
 
-**Domain:** Adding SnapTrade brokerage sync to personal portfolio tracker
-**Researched:** 2026-02-09
-**Confidence:** MEDIUM (official SnapTrade docs verified, generic integration patterns from multiple sources)
+**Domain:** Adding analytics (historical tracking, returns, sector allocation, concentration) and SoFi import to existing PHP/SQLite portfolio tracker
+**Researched:** 2026-02-11
+**Confidence:** MEDIUM-HIGH (Yahoo Finance unofficial API limitations verified, SQLite performance patterns confirmed, return calculation pitfalls from multiple sources, SoFi export capabilities verified)
 
 ## Critical Pitfalls
 
-### Pitfall 1: Sync-on-Page-Load Timeout Hell
+### Pitfall 1: Yahoo Finance Bulk Historical Data Rate Limiting
 
 **What goes wrong:**
-Synchronous API calls to SnapTrade during page load cause 10-30 second page hangs, especially when syncing multiple accounts or when SnapTrade's upstream brokerages are slow. Users perceive the app as broken.
+Portfolio analytics requires fetching historical data for all portfolio stocks (potentially 20-50 symbols). Yahoo Finance starts returning 429 errors or blocks your IP after ~100-200 requests in quick succession. Historical value charts break, sector classification fails to load, return calculations show stale data. User sees "Failed to fetch data" for half their portfolio.
 
 **Why it happens:**
-Developers treating brokerage sync like Yahoo Finance quotes (fast, cacheable). SnapTrade calls are slower because they proxy to real brokerages (Fidelity, Schwab, SoFi) which have variable response times. Putting this in the request path blocks the entire page render.
+Yahoo Finance is an unofficial, undocumented API based on web scraping. It has no official rate limits, but aggressive scraping triggers anti-bot protection. When you fetch 5-year historical data for 30 stocks simultaneously (for portfolio value tracking), you hit ~30 requests in <10 seconds. Yahoo interprets this as bot activity and rate-limits your IP. The API tightened limits around early 2024, making even moderate usage problematic.
 
 **How to avoid:**
-- Use SnapTrade's webhook system (`ACCOUNT_HOLDINGS_UPDATED`) instead of polling on page load
-- If polling is unavoidable, implement async background refresh with stale-data-first pattern: show cached data immediately, refresh in background, update UI when ready
-- Set aggressive timeouts (5 seconds max) on SnapTrade API calls to fail fast
-- Display loading states per-account rather than blocking entire page
+- Add delays between requests: minimum 500ms-1s per symbol (use `usleep(500000)` in PHP)
+- Batch historical fetches: fetch 5 stocks, sleep 2 seconds, fetch next 5
+- Cache aggressively: store historical data in SQLite, only refetch once per day
+- Use bulk quote endpoint when available: `query1.finance.yahoo.com/v7/finance/quote?symbols=AAPL,MSFT,GOOGL` (single request for multiple current prices, not historical)
+- Implement exponential backoff on 429 errors: detect error, wait 5s, retry with 10s, 20s, 40s delays
+- Rotate User-Agent headers between requests (some evidence this helps)
+- **DO NOT** fetch historical data on every page load - schedule background job or manual refresh button with rate limiting
 
 **Warning signs:**
-- User complaints about "app is slow" or "page won't load"
-- Server logs showing API calls taking >5 seconds
-- SQLite "database is locked" errors during sync (indicates concurrent writes)
+- HTTP 429 "Too Many Requests" errors in PHP logs
+- `file_get_contents()` returns false intermittently for Yahoo Finance URLs
+- Historical charts load for first 10 stocks but fail for remaining stocks
+- User reports "charts worked yesterday but broken today" (IP-level ban)
+- Sector data shows "unknown" for stocks fetched later in sequence
 
 **Phase to address:**
-Phase 1 (Sync Architecture). This is an architectural decision - if you get it wrong early, refactoring from sync-on-load to webhooks is painful.
+Phase 1 (Data Fetching Architecture). Must design rate-limited fetching BEFORE building analytics features. Retrofitting rate limiting after users complain is painful and requires rewriting fetch logic.
 
 ---
 
-### Pitfall 2: OAuth Redirect URI Mismatch with Cloudflare Tunnel
+### Pitfall 2: Time-Weighted vs Simple Return Calculation Confusion
 
 **What goes wrong:**
-SnapTrade OAuth flows fail with "redirect_uri_mismatch" errors. User completes brokerage login but never returns to your app. Connection appears to succeed but returns stale data forever.
+Portfolio shows "Total Return: +15%" but user's brokerage statement shows +8%. User loses trust in analytics. Return calculations are mathematically incorrect when deposits/withdrawals occur mid-period. Classic example: portfolio starts at $10K, user deposits $10K after 6 months, portfolio ends at $22K. Simple return shows +120% ($22K/$10K - 1) but true return is ~10% when accounting for timing of deposit.
 
 **Why it happens:**
-OAuth redirect URIs must match EXACTLY - protocol (https), domain, port, and path. Cloudflare Tunnel terminates TLS on port 443 but developers often configure the redirect URI with internal ports (`:8080`) or use `http://localhost` instead of the public domain. SnapTrade rejects the redirect and the flow breaks silently.
+Developers implement simple "ending value minus starting value" calculation without accounting for cash flows. Time-weighted return (TWR) requires tracking portfolio value at every cash flow event, which requires daily snapshots or transaction logging. Money-weighted return (MWR/XIRR) is even harder, requiring IRR calculation with all cash flow dates. When tested with real users, almost everyone makes mistakes with multi-cash-flow return calculations.
 
 **How to avoid:**
-- Register redirect URI in SnapTrade Dashboard as `https://your-public-domain.com/oauth/callback` (NOT `http://localhost:8080/...`)
-- Configure Cloudflare Tunnel to forward `your-public-domain.com` to `localhost:8080`
-- Never include internal ports in OAuth redirect URIs
-- Test OAuth flow in production environment before launch (localhost tunnels work differently)
-- Log the full redirect URI being sent vs what SnapTrade expects
+- Choose appropriate method: TWR for "how did my investments perform" (isolates manager skill), MWR for "how much did I actually make" (includes timing)
+- For simple implementation: use Modified Dietz method (approximates TWR with single calculation, handles cash flows)
+- For accurate TWR: store daily portfolio snapshots, calculate sub-period returns, chain-link them: `(1 + r1) * (1 + r2) - 1`
+- Include dividends in calculations: track dividend payments separately, add to return numerator (classic rookie mistake: forgetting dividends understates performance)
+- Label clearly: "Simple Return" vs "Time-Weighted Return" vs "Money-Weighted Return (IRR)" - users expect different values
+- **DO NOT** assume deposits/withdrawals are negligible - even small regular contributions distort simple returns significantly
+- Provide documentation: "Why doesn't this match my broker?" FAQ explaining calculation methods
 
 **Warning signs:**
-- Users report "connection succeeded" but holdings show $0 or no data
-- SnapTrade Dashboard shows disabled connections immediately after creation
-- OAuth flow redirects to blank page or 404
-- Browser console shows CORS errors or "callback not found"
+- Return % doesn't match user's brokerage statement (most common complaint)
+- Returns are positive while stock prices fell (forgot to account for deposits)
+- Large deposit causes return % to spike or drop unexpectedly
+- User questions: "I deposited $5K but my return went from +10% to +5%?"
 
 **Phase to address:**
-Phase 1 (OAuth Setup). Must be correct before any integration work. Test this in production-like environment with real Cloudflare Tunnel immediately.
+Phase 1 (Return Calculation Design) - choose method before implementation. Phase 2 (Transaction Tracking) - implement cash flow tracking if using TWR. Phase 3 (Testing & Validation) - verify calculations against known examples before launch.
 
 ---
 
-### Pitfall 3: Symbol Instability Breaking Data Reconciliation
+### Pitfall 3: Sector/Asset Class Data Freshness and Availability
 
 **What goes wrong:**
-Stock positions sync correctly on Day 1 but duplicate on Day 2. User has "AAPL" from manual entry and "AAPL.O" from SnapTrade sync, shown as two separate positions. Sold positions reappear after sync.
+Yahoo Finance returns `sector: null` or outdated sector classifications for 20-30% of stocks. User sees "Sector: Unknown" for TSLA (classified as "Auto" in 2020, reclassified later). Sector allocation chart shows "Unknown: 35%" slice dominating the chart. IPOs and recent stocks have no sector data. ETFs return meaningless sector classifications.
 
 **Why it happens:**
-SnapTrade returns symbols with exchange suffixes (`.O` for NASDAQ, `.N` for NYSE) while Yahoo Finance uses clean symbols (`AAPL`). SnapTrade docs explicitly warn: "A symbol is not guaranteed to be stable" because stocks trade on multiple exchanges. Your SQLite schema uses `symbol` as the reconciliation key but symbols don't match across sources.
+Yahoo Finance sector data comes from web scraping, not official API. Data freshness varies - some stocks have current GICS sectors, others show stale classifications from years ago. Because yfinance is unofficial, sectors can break when Yahoo updates its front-end. GICS system is revised periodically (sectors added/removed), creating version mismatches. ETFs don't have single sectors (they hold multiple), so sector field is often null or defaults to "Financial Services".
 
 **How to avoid:**
-- Use SnapTrade's `security_id` (stable) or `cusip` (industry standard) as reconciliation key, not symbol
-- Add `security_id` and `cusip` columns to stocks table
-- Normalize symbols on insert: strip exchange suffixes before storing
-- Implement fuzzy matching: if `AAPL.O` exists in SnapTrade but only `AAPL` in local DB, treat as same security
-- Always fetch current symbol at trade time (per SnapTrade docs recommendation)
+- Validate sector data: check for null/empty, show "Unknown" explicitly in UI
+- Manual override system: let user set sector for stocks with null data (store in `stocks.sector_override` column)
+- Secondary data source: fallback to alternative API or static mapping table for common stocks
+- Cache sector data: store in SQLite with `last_updated` timestamp, refresh monthly not daily
+- Handle ETFs specially: exclude from sector breakdown or use "ETF/Fund" category
+- Document sector source: "Sector data from Yahoo Finance, accuracy not guaranteed"
+- Consider alternatives: Alpha Vantage, Financial Modeling Prep, or manual CSV with top 500 stocks mapped to sectors
+- **DO NOT** assume sector data exists - check explicitly before using in calculations
+- Double-check critical data: validate against other sources for accuracy (per search results recommendation)
 
 **Warning signs:**
-- Duplicate stock entries after sync (same company, different symbols)
-- User reports "I sold this stock but it's still showing"
-- Cost basis calculations are wrong (mixing manual + synced positions)
-- Portfolio value jumps after sync even though no trades occurred
+- Large "Unknown" slice in sector allocation chart (>15% of portfolio)
+- Sector for well-known stock shows as null (AAPL, MSFT, GOOGL)
+- Sector allocation doesn't match user expectations ("I don't own any healthcare stocks but chart shows 10%")
+- Sectors change unexpectedly on refresh without user action
+- Error logs: "undefined index: sector" when processing Yahoo Finance response
 
 **Phase to address:**
-Phase 2 (Data Model). Must design reconciliation logic before building sync. Refactoring reconciliation keys after launch requires database migration and data cleanup.
+Phase 1 (Data Schema) - add `sector_override` column for manual fixes. Phase 2 (Sector Fetching) - implement validation and fallbacks. Phase 3 (UI/UX) - handle missing data gracefully with manual entry option.
 
 ---
 
-### Pitfall 4: Rate Limiting from Aggressive Sync
+### Pitfall 4: SQLite Performance Degradation with Growing Snapshot Data
 
 **What goes wrong:**
-SnapTrade API returns 429 (Too Many Requests) errors. Sync fails silently for some accounts but succeeds for others. Users with multiple accounts see incomplete data.
+Portfolio snapshots table grows to 100K+ rows after 1 year of daily tracking (30 stocks * 365 days = 10,950 snapshots/year, more with multiple accounts). Queries slow from <100ms to 3-5 seconds. Historical value chart takes 10+ seconds to load. Database file grows to 500MB-1GB. "Database locked" errors appear when generating charts while background snapshot job runs.
 
 **Why it happens:**
-Syncing all users' portfolios at once (e.g., nightly cron job) blasts SnapTrade API with concurrent requests. SnapTrade docs warn: "Aggressive syncs that sync user portfolios all-at-once will increase the chance that you hit your ratelimit threshold." Your single-user PHP app might be fine, but if you add more users later, this pattern breaks.
+Daily snapshots create time-series data that grows unbounded. Without indexes, queries like `SELECT * FROM snapshots WHERE symbol = 'AAPL' ORDER BY date DESC` do full table scans. SQLite is designed for <1M rows comfortably, but poor indexing or queries cause degradation earlier. Concurrent reads during writes cause locks without WAL mode. Full historical queries (5 years = 50K+ rows) load all data into memory.
 
 **How to avoid:**
-- Space out sync requests over time (jitter/backoff)
-- Implement retry logic with exponential backoff for 429 responses
-- Set `PRAGMA busy_timeout=5000` in SQLite to handle concurrent writes during retries
-- Use SnapTrade's daily auto-sync (happens once per 24 hours automatically) instead of polling
-- Monitor SnapTrade webhook for `ACCOUNT_HOLDINGS_UPDATED` events rather than polling
+- **Critical**: Enable WAL mode (`PRAGMA journal_mode=WAL`) - already done in current codebase, verify it stays enabled
+- Index heavily: `CREATE INDEX idx_snapshots_symbol_date ON snapshots(symbol, date DESC)`
+- Partition/archive old data: move snapshots >2 years old to `snapshots_archive` table, keep active table smaller
+- Use date range queries: `WHERE date >= DATE('now', '-1 year')` instead of loading all history
+- Aggregate daily to weekly/monthly for old data: store daily for last 90 days, weekly for last year, monthly beyond
+- Limit result sets: fetch last 365 days for charts, provide "load more" for historical
+- Vacuum regularly: `VACUUM` reclaims space after deletions, but locks DB (run during maintenance window)
+- Monitor size: alert when DB exceeds 100MB (should be <50MB for first year with proper schema)
+- Consider SQLite limits: 281TB theoretical max, but practical limit ~10GB for good performance
+- **DO NOT** use `SELECT *` on snapshot tables - fetch only needed columns: `SELECT date, value`
 
 **Warning signs:**
-- HTTP 429 errors in logs
-- Sync works for 1-2 accounts but fails for accounts 3+
-- Data is inconsistent across accounts (some fresh, some stale)
-- SnapTrade Dashboard shows connection errors
+- Chart loading time increases from instant to 5+ seconds
+- Database file size grows >10MB per month (should be ~2-5MB/month with proper schema)
+- "Database is locked" errors during snapshot generation
+- Browser shows "page unresponsive" when loading historical charts
+- Query logs show full table scans: `SCAN TABLE snapshots`
 
 **Phase to address:**
-Phase 1 (Sync Architecture) and Phase 3 (Error Handling). Architecture prevents it; error handling recovers gracefully when it happens.
+Phase 1 (Schema Design) - design snapshot schema with proper indexes upfront. Phase 2 (Query Optimization) - use EXPLAIN QUERY PLAN to verify index usage. Phase 3 (Data Management) - implement archival/aggregation before data grows large.
 
 ---
 
-### Pitfall 5: SQLite Write Lock During Sync
+### Pitfall 5: Monolithic File Complexity Explosion (4,100 → 8,000+ Lines)
 
 **What goes wrong:**
-"Database is locked" errors during sync. Half the positions update successfully, then the sync crashes. User sees partial data. On retry, duplicate positions appear because transaction wasn't atomic.
+`api.php` grows from 4,100 lines to 8,000+ lines after adding analytics endpoints (snapshot creation, historical value, sector breakdown, concentration analysis, return calculations, dividend projections). Single-file architecture becomes unmaintainable. Finding bugs takes 30+ minutes of scrolling. Git conflicts on every feature. New developer takes days to understand codebase. IDE becomes sluggish.
 
 **Why it happens:**
-SnapTrade returns 10-50 holdings per account. Your sync code inserts them one-by-one in a loop without transactions. SQLite only allows one writer at a time - if user loads the page (read lock) while sync is running (write lock), one of them fails. PHP's default SQLite timeout is 0ms, so it fails immediately instead of waiting.
+Each analytics feature adds 200-400 lines: fetch data function, calculation logic, endpoint handler, helper functions. Without refactoring, everything goes into `api.php`. "Just one more feature" mentality compounds. Monolithic codebases are hard to maintain by nature - as codebase grows, it becomes increasingly difficult to understand, modify, and extend. PHP doesn't enforce structure, making it easy to keep adding to single file.
 
 **How to avoid:**
-- Enable WAL mode: `PRAGMA journal_mode=WAL` (allows simultaneous readers/writers)
-- Set busy timeout: `PRAGMA busy_timeout=5000` (wait 5 seconds for lock instead of failing)
-- Use transactions: wrap entire sync in `BEGIN EXCLUSIVE...COMMIT`
-- Implement sync status tracking: mark sync as "in progress" to prevent concurrent syncs
-- Consider read replicas: keep "last successful sync" version for reads while new sync writes
+- **NOW is the time to refactor** - 4,100 lines is the tipping point where refactoring pays off
+- Extract to separate files: `api/quotes.php`, `api/analytics.php`, `api/import.php`, `api/dividends.php`
+- Use routing: Single entry point routes to handlers: `require "api/" . $endpoint . ".php"`
+- Shared utilities: Extract common functions to `lib/yahoo.php`, `lib/returns.php`, `lib/database.php`
+- Service layer: Create classes: `YahooFinanceService`, `AnalyticsService`, `SnapshotService`
+- Strangler Fig pattern: Build new structure alongside old, migrate piece by piece (not big-bang rewrite)
+- **DO NOT** rewrite from scratch - refactor incrementally (per search results: "it may be very tempting to rewrite from scratch, but it's not always the correct solution")
+- For 2026: pragmatic mix works best - core features in main file, new analytics in modules, don't over-engineer for hypothetical scale
 
 **Warning signs:**
-- "Database is locked" errors in PHP error logs
-- Inconsistent position counts (sometimes 10 stocks, sometimes 15)
-- Duplicate positions after sync failures
-- Sync retries creating exponentially more duplicates
+- Finding specific function requires IDE search or Ctrl+F (can't navigate by scrolling)
+- Git blame shows file modified in every commit (high change frequency)
+- Two features conflict in same 2,000-line section
+- You forget what functions exist and reimplement duplicates
+- Adding small feature requires understanding entire 4,000-line file
+- Code reviews take hours because reviewer needs full context
 
 **Phase to address:**
-Phase 1 (Database Configuration). WAL mode and timeout must be set before any sync code. Phase 2 (Sync Logic) handles transactions.
+Phase 0 (Pre-Analytics Refactoring) - extract existing endpoints to modules BEFORE adding analytics. This prevents 4,100 → 8,000 explosion. If skipped, address in Phase 2 (Mid-Development Refactoring) when pain becomes acute.
 
 ---
 
-### Pitfall 6: Missing Cost Basis Leading to Incorrect Gains
+### Pitfall 6: No SoFi API - Manual CSV Export Only
 
 **What goes wrong:**
-SnapTrade syncs holdings but cost basis is null or $0.00. Portfolio shows $50K in holdings but $0 cost basis, so gain/loss calculations show "+infinity%". User's tax reporting is wrong.
+Plan assumes SoFi import like Fidelity/Schwab CSV import. Implement CSV parser for SoFi format. User says "where do I get SoFi CSV?". SoFi has CSV export for *transactions* (checking/savings) but NOT for *investment portfolios*. User must manually transcribe holdings or use third-party scraping tools. Feature advertised as "SoFi import" becomes "SoFi manual entry helper".
 
 **Why it happens:**
-Not all brokerages provide cost basis via API (regulatory restrictions, transferred shares, etc.). SnapTrade returns positions with `quantity` and `price` (current) but `average_purchase_price` may be null. Your code assumes cost basis exists and does `gain = (current - cost) * shares`, producing garbage when cost is null.
+Assumption that all brokerages offer CSV export because Fidelity/Schwab do. SoFi supports read-only API for third-party tools (CoinLedger, Portseido) but doesn't provide direct CSV download for investment positions. Transaction history export exists but doesn't include current holdings with cost basis. Developer builds feature without verifying SoFi's actual export capabilities.
 
 **How to avoid:**
-- Check for null cost basis before calculating gains: `if ($cost === null) { show "manual entry required"; }`
-- Add UI for manual cost basis entry (your "fallback" mentioned in context)
-- Store cost basis source: `cost_basis_source ENUM('manual', 'brokerage', 'estimated')`
-- Calculate estimated cost basis from transaction history if holdings API doesn't provide it
-- Show warning icon for positions missing cost basis
-- Document which brokerages don't provide cost basis (Schwab, Fidelity sometimes inconsistent)
+- **Verify export availability FIRST**: log into real SoFi account, confirm CSV export exists before designing feature
+- Document limitations: "SoFi does not provide direct portfolio export - manual entry required or use third-party tools"
+- Alternative approaches:
+  - Manual entry with SoFi data visible side-by-side (split-screen guidance)
+  - OCR from SoFi screenshot (advanced, requires image processing)
+  - Browser extension to scrape SoFi web interface (complex, fragile)
+  - Third-party aggregator: Plaid, Yodlee (requires paid API, overkill for single-user app)
+- Consider read-only API: SoFi supports API for tools like Portseido, but requires OAuth, credentials management, ongoing maintenance
+- Set user expectations: Don't promise "SoFi import" if it means manual work
+- **DO NOT** assume brokerage parity - each has different export capabilities
 
 **Warning signs:**
-- Portfolio gain/loss shows impossible numbers (>500% gains on blue chip stocks)
-- Cost basis is $0.00 for synced positions
-- Tax reports don't match brokerage 1099 forms
-- Users complain "numbers don't match my broker"
+- User asks "how do I export from SoFi?" and you don't have clear answer
+- Search results show third-party tools for SoFi tracking but no native export
+- SoFi support documentation doesn't mention portfolio CSV export
+- Feature demo requires faking SoFi data because real export doesn't exist
 
 **Phase to address:**
-Phase 2 (Data Model - add source tracking) and Phase 3 (Cost Basis Handling - manual entry UI).
+Phase 0 (Requirements Validation) - verify SoFi export capabilities before planning. If export doesn't exist, remove from milestone or pivot to alternative approach (manual entry helper, API integration, or third-party tool).
 
 ---
 
-### Pitfall 7: Sold Positions Reappearing After Sync
+### Pitfall 7: Dividend Ex-Date vs Payment Date Projection Errors
 
 **What goes wrong:**
-User sells a stock in their brokerage. Your app syncs and correctly removes it. Next sync (24 hours later), the sold position reappears with 0 shares or stale data.
+Portfolio shows "Expected dividend income: $500 this month" but user receives $200. Projection includes dividends that haven't been declared yet (estimated based on history). Projection counts dividend that user isn't entitled to because they missed ex-date. User bought stock after ex-date but projection shows full dividend. Users rely on projections for cash flow planning and are surprised when actual income differs.
 
 **Why it happens:**
-Two causes: (1) SnapTrade's sync may include "closed positions" in historical data, or (2) your "auto-remove sold stocks" logic runs BEFORE sync, so sync re-adds them. Also, SnapTrade webhook `ACCOUNT_HOLDINGS_UPDATED` doesn't mean holdings CHANGED - it means sync was ATTEMPTED (per docs: "updated does not necessarily mean that the holdings have changed").
+Dividend projections are inherently uncertain: companies can cut/suspend dividends, change amounts, or change schedules. "Confirmed" vs "estimated" dividends are often conflated - historical patterns projected forward without marking as estimates. Ex-date vs payment date confusion: user sees "February dividend: $100" but they bought stock Feb 5th and ex-date was Feb 3rd (not entitled). Settlement timing (T+1) adds complexity - buying 1 day before ex-date doesn't qualify.
 
 **How to avoid:**
-- Filter positions by `quantity > 0` during sync (ignore 0-share positions)
-- Track position status: add `status ENUM('active', 'closed', 'pending')` column
-- Don't delete sold positions immediately - mark as `closed` and hide from UI
-- Keep closed positions for 90 days for tax reporting before hard delete
-- Implement soft deletes: `deleted_at DATETIME` instead of hard DELETE
-- Use SnapTrade's `refresh_brokerage_authorization` endpoint before sync to ensure fresh data
+- Distinguish confirmed vs estimated: mark each dividend as `type: 'confirmed'` (officially declared) or `'estimated'` (based on history)
+- Show confidence: "Estimated dividends (not confirmed): $X" with warning icon
+- Track ex-dates explicitly: store `ex_date` in dividends table, check user's purchase date vs ex-date
+- Warn on recent purchases: "You may not be entitled to this dividend (purchased after ex-date)"
+- Conservative projections: only count confirmed dividends by default, make estimated opt-in
+- Settlement timing: validate purchase date is ≥2 business days before ex-date (T+1 settlement)
+- Historical disclaimer: "Based on past dividends. Companies may change or suspend payments."
+- Quarterly cadence tracking: detect irregular payment patterns (monthly → quarterly change breaks projections)
+- **DO NOT** auto-project dividends beyond current quarter without clear "estimated" label
 
 **Warning signs:**
-- Positions with 0 shares appearing in portfolio
-- Stocks user sold weeks ago reappearing after sync
-- Duplicate entries for same stock (one active, one closed)
-- Portfolio value calculations including closed positions
+- User reports "I didn't receive dividend you predicted"
+- Projections include dividends for stocks purchased <1 week before ex-date
+- No visual distinction between confirmed and estimated dividends
+- Projection accuracy <80% over 3-month period
+- User questions: "Why did I get less than projected?"
 
 **Phase to address:**
-Phase 2 (Data Model - add status column) and Phase 3 (Sync Logic - filtering and soft deletes).
+Phase 1 (Data Model) - add `dividend_status ENUM('confirmed', 'estimated')` and `ex_date` columns. Phase 2 (Projection Logic) - implement ex-date validation and conservative defaults. Phase 3 (UI) - clear visual distinction and disclaimers.
 
 ---
 
-### Pitfall 8: Webhook Failure Silent Data Staleness
+### Pitfall 8: Portfolio Concentration Risk Thresholds - No Industry Standard
 
 **What goes wrong:**
-SnapTrade sends `ACCOUNT_HOLDINGS_UPDATED` webhook but your handler responds with 500 error (PHP exception). SnapTrade retries 3 times over several hours then gives up. Your app never syncs that account again but shows no error to user. Data becomes days/weeks stale silently.
+Portfolio shows "WARNING: High concentration in AAPL (35%)" but threshold is arbitrary. User with 3 stocks naturally has 33% each - warning is useless. Another user with 30 stocks has 15% in single sector - no warning but arguably risky. Concentration warnings are too sensitive (constant alerts) or too lenient (miss real risks). User ignores warnings because of alert fatigue.
 
 **Why it happens:**
-Webhooks fail for many reasons: database locked, network timeout, PHP fatal error. SnapTrade's retry logic (30 min, exponential backoff, 3 attempts) seems robust but only retries for transient failures. After 3 failures, webhook is marked "undelivered" and SnapTrade stops trying. Your app has no mechanism to detect missing webhooks.
+No universal threshold - risk tolerance varies by investor, portfolio size, and asset type. Institutional thresholds (Basel III: 25% to single counterparty) don't apply to individual stock portfolios. Common heuristics vary: ≥20% to single stock, ≥40% to single sector, HHI >2500 (highly concentrated). Small portfolios (<5 stocks) trigger false positives. Developer picks arbitrary threshold without research or user input.
 
 **How to avoid:**
-- Log all webhook receipts with timestamp to database: `webhook_log (type, received_at, processed_at, error)`
-- Monitor webhook gaps: if no `ACCOUNT_HOLDINGS_UPDATED` for account in >48 hours, trigger manual sync
-- Implement webhook health check: daily job verifies recent webhook activity
-- Return 2xx status BEFORE processing webhook - queue processing for async
-- Implement idempotency: use webhook's `id` field to prevent duplicate processing on retries
-- Add manual "force refresh" button in UI as escape hatch
+- Use multiple thresholds with severity levels:
+  - Single stock: >25% = high, >15% = medium, >10% = info
+  - Single sector: >40% = high, >30% = medium, >20% = info
+- Calculate Herfindahl-Hirschman Index (HHI): sum of squared percentages. HHI >2500 = highly concentrated, 1500-2500 = moderately concentrated, <1500 = diversified
+- Adjust for portfolio size: don't warn if total holdings <5 stocks (concentration is expected)
+- User-configurable thresholds: allow advanced users to set their own limits
+- Contextual warnings: "Your top 3 holdings represent 60% of portfolio" (informative, not alarming)
+- Provide education: "Why does concentration matter?" tooltip explaining risk
+- Correlation warnings: flag when top holdings are correlated (e.g., 3 tech stocks = higher risk than 3 uncorrelated stocks)
+- **DO NOT** use single rigid threshold - provide nuanced risk assessment
 
 **Warning signs:**
-- User reports "my new stock isn't showing up"
-- Holdings are days old but user hasn't been warned
-- SnapTrade Dashboard shows webhook failures
-- No webhook logs in database for extended periods
+- Every portfolio triggers concentration warnings (threshold too low)
+- Highly concentrated portfolio (80% in one stock) shows no warnings (threshold too high)
+- User asks "is 15% really risky?" without understanding context
+- Warning fatigue: user dismisses all warnings because too many false positives
 
 **Phase to address:**
-Phase 3 (Webhook Handling) and Phase 4 (Monitoring & Health Checks).
+Phase 1 (Research & Design) - research standard thresholds, choose evidence-based defaults. Phase 2 (Calculation Logic) - implement HHI and tiered warnings. Phase 3 (User Education) - tooltips explaining why thresholds matter and how to interpret warnings.
 
 ---
 
-### Pitfall 9: Connection Status Drift (Token Expiry)
+### Pitfall 9: Historical Snapshot Backfilling - Data Availability Limitations
 
 **What goes wrong:**
-SnapTrade connection works for weeks then suddenly stops syncing. Holdings freeze at stale values. User isn't notified their brokerage connection is broken until they manually check.
+User adds analytics feature on day 1 and expects to see "5-year portfolio value chart" immediately. Developer attempts to backfill historical snapshots by fetching Yahoo Finance historical data and calculating past portfolio values. Calculation assumes current holdings existed 5 years ago, showing misleading "portfolio value" for stocks user didn't own yet. Chart shows portfolio worth $0 for first 3 years (before user started investing), then sudden jump to $100K.
 
 **Why it happens:**
-Brokerage OAuth tokens expire (30-90 days depending on broker). SnapTrade detects this and disables the connection but doesn't automatically notify your app unless you've configured webhooks. Your app continues showing stale data because it doesn't check connection status before displaying holdings.
+Historical portfolio value requires knowing what you owned and when. Without transaction history, backfilling is impossible to do accurately. Developer assumes "calculate hypothetical value if I always owned current holdings" is useful, but it's misleading. User interprets backfilled chart as actual historical performance but it's synthetic. Yahoo Finance provides stock prices, not your purchase dates.
 
 **How to avoid:**
-- Check connection status before every sync: GET `/connections/{id}/status`
-- Monitor `CONNECTION_BROKEN` webhook to detect disabled connections immediately
-- Show connection status in UI: green (active), yellow (refresh needed), red (broken)
-- Implement reconnection flow: when status is "broken", prompt user to re-authenticate
-- Cache connection status in DB: `connections.status ENUM('active', 'broken', 'pending_reauth')`
-- Set expiry reminder: warn user 7 days before expected token expiry
+- **Accept limitation**: start tracking from today, show "tracking since [date]" label
+- Require transaction history for backfill: user must import buy/sell transactions before backfilling
+- Manual entry option: let user enter "starting portfolio value on [date]" as baseline
+- Clear labeling: "Historical values calculated from current holdings (not actual performance)" if backfilling
+- Hybrid approach: use manual baseline + daily tracking forward: "Portfolio was $50K on Jan 1, 2024" + daily snapshots since
+- Import broker statements: parse PDFs/CSVs with transaction history to reconstruct historical holdings
+- **DO NOT** silently backfill with current holdings - either skip backfilling or clearly mark as synthetic
+- Consider simpler metric: "gain/loss since first tracked purchase" instead of full historical chart
 
 **Warning signs:**
-- Holdings data is >7 days old
-- SnapTrade API returns 401/403 errors for specific connection
-- Dashboard shows connection as "disabled" but app shows active
-- User reports "broker says I'm connected but app shows old data"
+- User expects full 5-year chart on day 1 of using analytics
+- Backfilled chart shows values for stocks user bought recently (anachronism)
+- Chart shows unrealistic growth patterns (hockey stick from $0 to current value)
+- User confusion: "My portfolio was never $0, why does chart show that?"
 
 **Phase to address:**
-Phase 3 (Connection Management) and Phase 4 (Status Monitoring & Alerts).
+Phase 1 (Expectations Setting) - document that tracking starts from activation date. Phase 2 (Manual Baseline) - allow user to set starting value if they want earlier baseline. Phase 3 (Transaction Import) - if building transaction history, enable true historical reconstruction.
 
 ---
 
-### Pitfall 10: No Authentication = Multi-Brokerage Leak
+### Pitfall 10: Yahoo Finance Sector Data Structure Changes Breaking Parsers
 
 **What goes wrong:**
-You add SnapTrade support. User connects their Fidelity account. Later you realize: "wait, SnapTrade supports Schwab and SoFi too - should I add those?" You do. Now this single-user app stores connections for 3 brokerages but has no authentication. Anyone with your Cloudflare Tunnel URL sees ALL your financial data.
+Sector allocation feature works perfectly for 3 months. Yahoo Finance updates their website structure. Sector data moves from `meta.sector` to `summaryProfile.sector` in API response. Your parser breaks silently - all stocks show `sector: null`. User sees 100% "Unknown" in sector chart. No error logs because code doesn't validate, just assigns null. Feature appears broken but no error thrown.
 
 **Why it happens:**
-Single-user assumption is baked into architecture ("no authentication needed, it's just me"). Adding brokerage sync changes threat model - you're now storing OAuth tokens for real financial accounts. Cloudflare Tunnel makes your localhost publicly accessible. No auth means no protection.
+Yahoo Finance is unofficial/undocumented. They change HTML structure and API response formats without notice. Because it's based on web scraping (per search results: "yfinance scrapes Yahoo Finance web endpoints"), front-end changes break scrapers. Code assumes sector field exists at specific path, doesn't handle missing/moved fields. "Unofficial methods can break when Yahoo updates its front-end or access patterns" (from search results).
 
 **How to avoid:**
-- Add authentication BEFORE brokerage sync (Phase 0)
-- At minimum: HTTP Basic Auth with environment variable password
-- Better: Generate random session token on first launch, require cookie auth
-- Best: Proper user authentication with encrypted SnapTrade secrets per user
-- Use Cloudflare Tunnel Access policy: restrict by IP or email
-- Encrypt SnapTrade `consumerKey` and `userSecret` at rest (don't store plaintext in SQLite)
+- Defensive parsing: check multiple possible locations for sector data: `$sector = $data['meta']['sector'] ?? $data['summaryProfile']['sector'] ?? null`
+- Validation and logging: log when sector is null for >50% of stocks (indicates parser breakage, not missing data)
+- Graceful degradation: show "Sector data temporarily unavailable" instead of "Unknown" for all stocks
+- Monitor external libraries: if using yfinance-equivalent PHP library, watch for updates/issues on GitHub
+- Version API calls: some Yahoo endpoints have v7, v8 versions - pin to stable version
+- Fallback data source: maintain static mapping CSV for top 500 stocks (sector data rarely changes)
+- Health checks: automated daily job verifying sample stocks return valid sector data
+- User-reported issues: make it easy for users to report "all sectors show unknown"
+- **DO NOT** assume API structure is stable - build resilience from day 1
 
 **Warning signs:**
-- You realize anyone with your tunnel URL can view your portfolio
-- SnapTrade Dashboard shows multiple userSecrets registered
-- You hesitate to share screenshots because they contain real financial data
-- Your browser auto-fills your Fidelity password on any device on your network
+- Sudden spike in null sector values (was 5%, now 95%)
+- All stocks fetched after certain date have null sectors (API change occurred)
+- GitHub issues on yfinance/similar projects about sector data breaking
+- Yahoo Finance website redesign announcement (often precedes API changes)
 
 **Phase to address:**
-Phase 0 (Security Foundation) - MUST happen before any SnapTrade integration. This is a "stop everything and fix" issue.
+Phase 1 (Parser Implementation) - defensive coding with fallbacks from start. Phase 2 (Monitoring) - add health checks for data quality. Phase 3 (Maintenance) - establish process for responding to API changes within 48 hours.
 
 ---
 
@@ -275,31 +315,33 @@ Shortcuts that seem reasonable but create long-term problems.
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| Storing OAuth tokens in plaintext SQLite | No encryption complexity | Security vulnerability if DB leaked | Never - use `openssl_encrypt()` or PHP's libsodium |
-| Sync on page load instead of webhooks | Simpler implementation (no webhook server) | Slow page loads, rate limit risk | Only for MVP/prototype with <5 holdings |
-| Using symbol as reconciliation key | Matches existing Yahoo Finance code | Symbol instability causes duplicates | Never - symbols change, use cusip/security_id |
-| No retry logic for failed syncs | Fewer lines of code | Silent data staleness | Never - brokerages fail ~1% of requests |
-| Hard deleting sold positions | Simpler database (no status tracking) | Can't reconcile tax reports, positions reappear | Never - use soft deletes for 90+ days |
-| Single SQLite connection without WAL mode | Default SQLite behavior | "Database locked" errors under load | Only for true single-user (never concurrent requests) |
-| Polling SnapTrade instead of webhooks | No webhook infrastructure needed | 10x higher API usage, rate limits | Only if <10 accounts, sync <4x/day |
-| Assuming cost basis exists | Simpler gain/loss calc | Incorrect tax reporting | Never - nullable cost basis is reality |
+| No rate limiting on Yahoo Finance requests | Faster initial page load, simpler code | IP bans, 429 errors, broken features | Never - rate limits are critical for unofficial APIs |
+| Simple return calculation without cash flow tracking | Easy to implement (1 line of code) | Incorrect returns confuse users, lost trust | Only for portfolios with zero deposits/withdrawals (rare) |
+| Backfilling snapshots from current holdings | Instant historical charts, no waiting | Misleading data (shows stocks you didn't own yet) | Only with clear "synthetic data" labeling |
+| Storing all snapshots in single table without archival | Simpler schema, no maintenance | Database grows to 100K+ rows, queries slow | Only for first 6 months, then implement archival |
+| Using `file_get_contents()` without timeout | Default PHP behavior, no extra config | Hangs for 60s on network issues, blocks entire request | Never - always set timeout (10-15s max) |
+| Not caching sector/company data | Always fresh data | 10x more API calls, rate limit risk | Never - sector changes monthly at most, cache for 30 days |
+| Adding all analytics to `api.php` without refactoring | Fastest initial development | 8,000-line unmaintainable file | Only for MVP/prototype, refactor before v1.2 launch |
+| Assuming all brokerages have CSV export | Consistent import experience | SoFi/Robinhood users can't import, wasted development | Never - verify export capability per broker |
+| Hard-coded concentration thresholds | No UI complexity, one-size-fits-all | False positives annoy users, false negatives miss risks | Only for v1, add user config in v1.1+ |
+| No distinction between confirmed/estimated dividends | Simpler UI, single projection number | Users plan cash flow on estimates, get surprised | Never - accuracy matters for income planning |
 
 ## Integration Gotchas
 
-Common mistakes when connecting to SnapTrade specifically.
+Common mistakes when connecting to Yahoo Finance and handling portfolio data.
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| **Authentication** | Using consumerKey alone without signature | Use SnapTrade SDK or copy signature generation from SDK (HMAC SHA256) |
-| **User Management** | Creating new user for each connection | One SnapTrade user can have multiple connections (Fidelity + Schwab + SoFi) |
-| **OAuth Redirects** | Using `http://localhost:8080/callback` | Use public HTTPS domain that Cloudflare Tunnel maps to localhost |
-| **Webhooks** | Relying on webhooks for real-time sync | SnapTrade syncs daily (not real-time) - webhooks just notify when sync completes |
-| **Rate Limits** | Syncing all accounts simultaneously | Space syncs out over time window, handle 429s with exponential backoff |
-| **Symbols** | Caching symbols for trades | Fetch symbol at trade time (symbols change per docs) |
-| **Holdings Updates** | Assuming `ACCOUNT_HOLDINGS_UPDATED` = data changed | It means sync attempted (may not have changed, may have failed) |
-| **Connection Status** | Assuming active connection stays active forever | Tokens expire in 30-90 days, check status before each sync |
-| **Cost Basis** | Assuming average_purchase_price is always present | Null for transferred shares, old positions - provide manual entry |
-| **Closed Positions** | Deleting positions with quantity=0 immediately | Filter during sync, soft delete, keep for tax season |
+| **Yahoo Finance Bulk Fetches** | Fetching 30 stocks with 30 sequential requests | Use bulk quote endpoint for current prices: `/v7/finance/quote?symbols=AAPL,MSFT,GOOGL`; space historical fetches 500ms-1s apart |
+| **Sector Data** | Assuming `meta.sector` always exists | Check multiple fallback locations: `$sector = $data['meta']['sector'] ?? $data['summaryProfile']['sector'] ?? $data['assetProfile']['sector'] ?? null` |
+| **Historical Data Parsing** | Using first/last close price for period calculations | Filter out null values: skip weekends, holidays, trading halts before calculating |
+| **Return Calculations** | Dividing ending by starting value for multi-period returns | Chain-link sub-period returns: `(1 + r1) * (1 + r2) * (1 + r3) - 1` for accurate multi-period |
+| **Snapshot Storage** | Storing full stock metadata in each snapshot | Store only essentials: `(symbol, date, price, shares, value)` - join to stocks table for company name etc. |
+| **Dividend Projections** | Multiplying last dividend by 4 for annual estimate | Check payment frequency: monthly, quarterly, annual, special - extrapolate accordingly |
+| **Concentration Warnings** | Single threshold for all portfolio sizes | Adjust for size: no warnings if <5 holdings (33% is normal), stricter for large portfolios |
+| **Rate Limit Handling** | Failing silently on 429 errors | Detect 429, implement exponential backoff, cache previous results, show stale data warning |
+| **SQLite Snapshots** | Daily snapshots without date index | Index on `(symbol, date DESC)` for fast time-series queries |
+| **SoFi Import** | Building CSV parser without verifying export exists | Verify brokerage export capability first - SoFi investment CSV doesn't exist, only transactions |
 
 ## Performance Traps
 
@@ -307,13 +349,13 @@ Patterns that work at small scale but fail as usage grows.
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| **Sync-on-page-load** | Page hangs 10-30 seconds | Use webhooks + background sync with stale-first caching | >3 connected accounts or slow brokerage API |
-| **No SQLite WAL mode** | "Database locked" errors | `PRAGMA journal_mode=WAL` + `busy_timeout=5000` | Concurrent reads during sync (even single user with multiple tabs) |
-| **Polling SnapTrade every page load** | 429 rate limit errors | Use SnapTrade's auto-sync (daily) + webhooks for updates | >10 page loads per hour |
-| **Single transaction per holding** | Sync takes 30+ seconds, times out | Batch inserts in single transaction (`BEGIN...COMMIT`) | >50 holdings per account |
-| **Synchronous webhook processing** | Webhook timeouts, SnapTrade retries | Return 200 immediately, queue processing async | Webhook handler takes >5 seconds |
-| **Refetching all holdings on every sync** | API quota exhaustion | Incremental sync: check `updated_at` timestamp, only fetch if changed | >5 accounts with >100 holdings each |
-| **No connection pooling** | PHP opens new SQLite connection per request | Reuse single connection with persistent PDO | >100 requests/hour |
+| **Fetching historical data on page load** | Page takes 30+ seconds to load, timeouts | Background job generates snapshots nightly, page loads from DB | >10 stocks with 1y+ history |
+| **No snapshots table, recalculating historical value** | Historical chart takes 10s to load, 100+ API calls | Daily snapshot job stores portfolio value, charts query DB | First time user clicks historical chart |
+| **Single query for all-time snapshots** | Chart loads in 5s, browser freezes | Limit to 1 year by default: `WHERE date >= DATE('now', '-1 year')`, paginate for older | >5,000 snapshots (~1 year of daily data for 15 stocks) |
+| **No caching on sector/company lookups** | Every page load fetches same 30 stocks' metadata | Cache in stocks table, refresh monthly: `last_sector_update` timestamp | >20 stocks, >10 page loads/day |
+| **Full table scan on snapshots** | Chart query takes 2s, CPU spikes | Index on `(symbol, date DESC)` - verify with EXPLAIN | >10,000 snapshots |
+| **N+1 queries for portfolio value** | Load portfolio: 1 query stocks + 30 queries for current prices | Batch fetch: `SELECT * FROM quotes WHERE symbol IN (...)` or use bulk API | >15 stocks in portfolio |
+| **Synchronous dividend fetch for all stocks** | Loading dividends page takes 20s | Async fetch or cache: store dividends in DB, refresh daily in background | >10 dividend-paying stocks |
 
 ## Security Mistakes
 
@@ -321,44 +363,42 @@ Domain-specific security issues beyond general web security.
 
 | Mistake | Risk | Prevention |
 |---------|------|------------|
-| **Plaintext OAuth tokens in SQLite** | Full account takeover if DB leaked | Encrypt with `openssl_encrypt()` using key from environment variable |
-| **No authentication with public Cloudflare Tunnel** | Anyone can view your financial portfolio | Add Cloudflare Access policy or HTTP Basic Auth before going live |
-| **Logging sensitive data** | userSecret/consumerKey in logs → account compromise | Redact secrets in logs: `log('[REDACTED]')` |
-| **CORS misconfiguration** | Allowing any origin to call your API | Single-user app shouldn't need CORS - reject cross-origin requests |
-| **Storing consumerKey client-side** | Key exposed in browser DevTools | Keep all SnapTrade credentials server-side only |
-| **No webhook signature verification** | Attackers can forge webhooks to inject fake data | Verify HMAC signature using SnapTrade's `Signature` header |
-| **No rate limiting on force-refresh button** | User spams refresh → rate limit → all syncs fail | Implement button cooldown (1 refresh per 5 minutes) |
-| **Exposing SnapTrade userSecret in URLs** | Secret in server logs, browser history | Use POST body or headers, never GET params |
+| **Exposing portfolio value in URL params** | `?portfolioValue=125000` in URL → server logs leak wealth | Store portfolio aggregations server-side, pass only stock IDs |
+| **No rate limiting on snapshot generation** | User spams "refresh charts" → 100 Yahoo Finance requests → IP ban | 1 snapshot refresh per hour per user, queue background job |
+| **Storing API keys for future "premium data" in SQLite** | Database backup leaked → API keys compromised | Store in environment variables, encrypt at rest with libsodium if DB storage required |
+| **Logging full Yahoo Finance responses** | Debug logs contain user's holdings, values, personal data | Redact sensitive fields: log only symbol, timestamp, status code |
+| **No HTTPS enforcement for Cloudflare Tunnel** | Portfolio data transmitted in plaintext over network | Force HTTPS in Cloudflare Tunnel settings, redirect HTTP → HTTPS |
+| **Client-side concentration threshold calculation** | User opens DevTools, sees portfolio composition in JS | Calculate server-side, return only aggregated warnings |
 
 ## UX Pitfalls
 
-Common user experience mistakes in this domain.
+Common user experience mistakes in portfolio analytics domain.
 
 | Pitfall | User Impact | Better Approach |
 |---------|-------------|-----------------|
-| **No loading state during sync** | User thinks app is broken, refreshes page (makes it worse) | Show "Syncing Fidelity..." with spinner per account |
-| **No indication of stale data** | User makes decisions on outdated holdings | Show "Last synced: 2 hours ago" timestamp |
-| **Sync failure shown as generic error** | User doesn't know if their broker is broken or your app | Specific messages: "Fidelity connection expired - please reconnect" |
-| **No way to manually trigger sync** | User adds stock at broker, waits 24 hours for auto-sync | Add "Refresh" button (with rate limit) |
-| **Mixing manual + synced positions without labels** | User confused why some stocks have cost basis, others don't | Show badge: "Synced from Fidelity" vs "Manually added" |
-| **No indication during OAuth flow** | User clicks "Connect Fidelity", nothing happens for 5 seconds | Immediate feedback: "Opening Fidelity login..." |
-| **Connection errors hidden** | User's broker token expires, they never know | Persistent warning banner: "Your Fidelity connection needs attention" |
-| **Duplicate stocks from manual + sync** | User has AAPL twice, doesn't understand why | Prompt: "AAPL exists in Fidelity - merge with your manual entry?" |
+| **No loading state during historical data fetch** | User thinks app is broken, refreshes (makes it worse) | Show "Fetching 5-year data for 20 stocks... 45% complete" progress bar |
+| **Historical chart shows $0 for early dates** | User confused why portfolio was worthless in 2020 | Start chart from first tracked date, or label "No data before [date]" |
+| **Return % without context** | "+15%" - is that good? Compared to what? | Show benchmark: "Your return: +15% vs S&P 500: +12%" |
+| **Sector "Unknown" with no explanation** | Large gray slice labeled "Unknown" looks broken | Label "Sector Not Available (15%)" + info icon: "Some stocks lack sector data from Yahoo Finance" |
+| **Concentration warning without guidance** | "WARNING: High concentration in AAPL" - now what? | Add suggestions: "Consider reducing AAPL to <20% or diversifying into other sectors" |
+| **Estimated vs confirmed dividends look identical** | User plans cash flow on estimate, disappointed when not paid | Style differently: confirmed = solid green, estimated = dashed outline + "Est." label |
+| **No explanation of return calculation method** | User's broker shows different return %, thinks your app is wrong | Tooltip: "Time-weighted return (TWR) - measures investment performance excluding cash flow timing" |
+| **Charts with no date range selector** | User wants to see "last 30 days" but only 5-year chart available | Date range buttons: 1M, 3M, 6M, 1Y, 5Y, All |
 
 ## "Looks Done But Isn't" Checklist
 
 Things that appear complete but are missing critical pieces.
 
-- [ ] **Brokerage Connection:** Working demo, but verify token refresh flow when OAuth expires in 30 days
-- [ ] **Holdings Sync:** Showing holdings, but check if cost basis is null for any positions (broken gain/loss)
-- [ ] **Symbol Reconciliation:** Manual stock symbol matches synced symbol, but verify with exchange suffixes (AAPL vs AAPL.O)
-- [ ] **Webhook Handler:** Receiving webhooks, but verify retry logic handles 3 failed attempts without losing data
-- [ ] **Connection Status:** Dashboard shows "connected", but verify polling connection status endpoint detects broken tokens
-- [ ] **Error Handling:** 429 errors handled with retry, but verify exponential backoff doesn't create thundering herd
-- [ ] **Data Staleness:** Showing last sync timestamp, but verify alerting user when >48 hours since last successful sync
-- [ ] **Sold Positions:** Auto-removing 0-quantity holdings, but verify soft delete for tax season (positions deleted permanently?)
-- [ ] **SQLite Concurrency:** Works with one account, but verify WAL mode enabled for multi-tab usage
-- [ ] **OAuth Redirect:** Works on localhost, but verify production Cloudflare Tunnel URL registered in SnapTrade Dashboard
+- [ ] **Historical Value Chart:** Shows data, but verify Yahoo Finance rate limiting doesn't break it with >20 stocks
+- [ ] **Return Calculation:** Shows %, but verify handles deposits mid-period correctly (not simple division)
+- [ ] **Sector Allocation:** Shows chart, but verify handles null sectors gracefully (not 100% "Unknown")
+- [ ] **Dividend Projections:** Shows income, but verify distinguishes confirmed vs estimated dividends
+- [ ] **Concentration Warnings:** Shows alerts, but verify thresholds make sense for small portfolios (<5 stocks)
+- [ ] **SoFi Import:** Feature planned, but verify SoFi actually provides CSV export (it doesn't for investments)
+- [ ] **Snapshot Schema:** Table created, but verify has indexes on `(symbol, date)` for performance
+- [ ] **Yahoo Finance Parsing:** Works today, but verify has fallback logic for when API structure changes
+- [ ] **Historical Backfill:** User expects 5-year chart on day 1 - verify expectation is set (tracking starts today)
+- [ ] **API File Size:** Adding 2,000 lines of analytics - verify refactoring plan exists to avoid 8,000-line monolith
 
 ## Recovery Strategies
 
@@ -366,16 +406,16 @@ When pitfalls occur despite prevention, how to recover.
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| **OAuth redirect mismatch** | LOW | Update redirect URI in SnapTrade Dashboard, delete broken connections, user re-authenticates |
-| **Symbol duplication** | MEDIUM | Add `security_id` column, backfill from SnapTrade, run deduplication script, update reconciliation logic |
-| **SQLite lock errors** | LOW | Enable WAL mode (`PRAGMA journal_mode=WAL`), set busy_timeout, restart PHP |
-| **Missing cost basis** | MEDIUM | Add manual entry form, prompt user to fill in, fetch transaction history API for estimation |
-| **Rate limit ban** | HIGH | Contact SnapTrade support, implement backoff, wait for rate limit reset (24 hours) |
-| **Webhook processing failures** | MEDIUM | Implement manual sync fallback, queue failed webhooks for retry, monitor webhook gaps |
-| **Connection token expired** | LOW | Detect with `CONNECTION_BROKEN` webhook, show re-auth prompt, user clicks "Reconnect" |
-| **Stale holdings (weeks old)** | MEDIUM | Force refresh all connections, verify webhook URL is correct, check SnapTrade Dashboard for disabled connections |
-| **Plaintext tokens leaked** | HIGH | Rotate all userSecrets via SnapTrade API, implement encryption, audit access logs, notify user |
-| **Sold positions reappearing** | MEDIUM | Add `status` column, migrate to soft deletes, filter `quantity > 0` in sync logic |
+| **Yahoo Finance IP ban** | MEDIUM | Wait 24 hours for ban to expire, implement rate limiting (500ms delays), rotate User-Agent, consider proxy/VPN |
+| **Incorrect return calculations** | HIGH | Fix calculation logic, add cash flow tracking, re-calculate all historical returns, communicate to users |
+| **Sector data all null** | LOW | Implement fallback static CSV with top 500 stocks mapped to sectors, prompt user for manual entry |
+| **Snapshot table too large (slow queries)** | MEDIUM | Add indexes: `CREATE INDEX idx_snapshots_symbol_date ON snapshots(symbol, date DESC)`, archive old data |
+| **Monolithic api.php (8,000 lines)** | HIGH | Incremental refactor: extract analytics to `api/analytics.php`, use Strangler Fig pattern (don't rewrite) |
+| **No SoFi CSV export** | LOW | Remove "SoFi import" from milestone, add "SoFi manual entry helper" or API integration (higher cost) |
+| **Dividend projection inaccuracy** | MEDIUM | Add "confirmed only" filter as default, mark estimates clearly, add disclaimer about uncertainty |
+| **Concentration threshold too sensitive** | LOW | Add user-configurable thresholds, implement HHI calculation, adjust for portfolio size |
+| **Yahoo Finance structure change** | MEDIUM | Update parser with new field locations, add fallbacks, deploy hotfix within 48 hours |
+| **No historical data (tracking just started)** | LOW | Set expectations: "Tracking since [date]", allow manual baseline entry for earlier starting point |
 
 ## Pitfall-to-Phase Mapping
 
@@ -383,37 +423,37 @@ How roadmap phases should address these pitfalls.
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| Sync-on-page-load timeout | Phase 1: Sync Architecture | Load page with 3 accounts, should render <2 seconds |
-| OAuth redirect mismatch | Phase 1: OAuth Setup | Complete OAuth flow in production with Cloudflare Tunnel |
-| Symbol instability | Phase 2: Data Model | Add stock manually, sync from broker, should merge (not duplicate) |
-| Rate limiting | Phase 1: Sync Architecture, Phase 3: Error Handling | Trigger 100 syncs rapidly, should queue with backoff (not fail) |
-| SQLite write locks | Phase 1: Database Config | Open 3 tabs, trigger sync, no "database locked" errors |
-| Missing cost basis | Phase 2: Data Model, Phase 3: Cost Basis | Sync account with transferred shares, should show "manual entry needed" |
-| Sold positions reappearing | Phase 2: Data Model, Phase 3: Sync Logic | Sell stock in broker, sync twice 24h apart, shouldn't reappear |
-| Webhook failures | Phase 3: Webhook Handling, Phase 4: Monitoring | Simulate webhook timeout, should retry 3x then alert admin |
-| Connection token expiry | Phase 3: Connection Management | Wait 30 days (or mock token expiry), should prompt re-auth |
-| No authentication | Phase 0: Security Foundation | Try to access app without auth, should be blocked |
+| Yahoo Finance rate limiting | Phase 1: Data Fetching | Fetch 30 stocks sequentially, verify no 429 errors, time should be ~30s with delays |
+| Return calculation errors | Phase 1: Calculation Design | Test with known scenarios: deposit mid-period, withdrawal, verify TWR matches manual calc |
+| Sector data null handling | Phase 1: Data Schema, Phase 2: Parser | Fetch 100 random stocks, verify <20% have null sectors, UI handles gracefully |
+| SQLite snapshot performance | Phase 1: Schema Design | Insert 10,000 test snapshots, run chart query, should complete <200ms |
+| Monolithic file growth | Phase 0: Pre-Analytics Refactor | Refactor before analytics work begins, verify api.php stays <2,000 lines |
+| SoFi CSV export availability | Phase 0: Requirements Validation | Log into SoFi, attempt to export investment CSV, document actual capability |
+| Dividend projection accuracy | Phase 2: Dividend Logic | Mark confirmed vs estimated, verify ex-date entitlement logic with test cases |
+| Concentration threshold sensitivity | Phase 1: Threshold Research | Test with 3-stock, 10-stock, 30-stock portfolios, verify warnings are contextually appropriate |
+| Historical backfill expectations | Phase 1: Documentation | Set user expectations: "tracking starts today", test user comprehension |
+| Yahoo Finance structure changes | Phase 2: Parser Resilience | Implement fallback parsing, mock API change, verify graceful degradation |
 
 ## Sources
 
-### Official Documentation (HIGH confidence)
-- [SnapTrade FAQ](https://docs.snaptrade.com/docs/faq) - Authentication, rate limiting, symbol stability warnings
-- [SnapTrade Webhooks](https://docs.snaptrade.com/docs/webhooks) - Webhook retry logic, sync behavior
-- [SnapTrade Launch Guide](https://docs.snaptrade.com/docs/launch-guide) - Pre-launch requirements, rate limits, compliance
-- [OAuth 2.0 Redirect Errors](https://www.oauth.com/oauth2-servers/server-side-apps/possible-errors/) - OAuth error types
-- [SQLite Locking and Concurrency](https://sqlite.org/lockingv3.html) - Official SQLite lock behavior
+### Official/High Confidence
+- [Yahoo Finance API Rate Limits](https://apipark.com/technews/RZtyppGC.html) - Unofficial API limitations, rate limit patterns
+- [SQLite Performance and Limits](https://sqlite.org/limits.html) - Database size limits, performance characteristics
+- [SQLite Forum: Concurrent Access](https://sqlite.org/forum/info/d0273f0da62dd753baf5479764c22b119c828585e3a7b6c0ff419e7dec3eb4ad) - WAL mode, locking behavior
+- [Portfolio Return Calculations Guide](https://portfoliooptimizer.io/blog/the-mathematics-of-portfolio-return-simple-return-money-weighted-return-and-time-weighted-return/) - TWR, MWR, calculation methods
+- [How to Calculate Portfolio Returns: TWR vs MWR](https://www.allinvestview.com/articles/portfolio-returns-guide/) - Common calculation mistakes
 
 ### Verified Community Resources (MEDIUM confidence)
-- [How I Solved the Google OAuth Callback Issue with Cloudflare Tunnel](https://medium.com/@bonfacealfonce/how-i-solved-the-google-oauth-callback-issue-in-n8n-docker-cloudflare-tunnel-a53c860073a8) - OAuth redirect with tunnels
-- [SQLite Concurrent Writes and Database Locked Errors](https://tenthousandmeters.com/blog/sqlite-concurrent-writes-and-database-is-locked-errors/) - WAL mode solutions
-- [Portfolio Reconciliation Guide](https://www.limina.com/blog/cash-position-reconciliation-guide) - Reconciliation patterns
-- [Fintech App Security: Building a Secure Fintech App](https://neontri.com/blog/fintech-app-security/) - Authentication requirements
-
-### API Integration Best Practices (MEDIUM confidence)
-- [Best Practices for API Error Handling](https://blog.postman.com/best-practices-for-api-error-handling/) - Error handling patterns
-- [Effective Error Handling in RESTful APIs](https://moldstud.com/articles/p-effective-error-handling-in-restful-apis-insights-for-full-stack-php-developers) - PHP-specific patterns
-- [Asynchronous APIs: Benefits and Use Cases](https://blog.dreamfactory.com/asynchronous-apis-what-are-the-benefits-and-use-cases) - Async vs sync tradeoffs
+- [Why yfinance Keeps Getting Blocked](https://medium.com/@trading.dude/why-yfinance-keeps-getting-blocked-and-what-to-use-instead-92d84bb2cc01) - Rate limiting issues, 2024 changes
+- [Yahoo Finance API Guide](https://algotrading101.com/learn/yahoo-finance-api-guide/) - Unofficial API patterns, best practices
+- [Handling Time Series Data in SQLite](https://moldstud.com/articles/p-handling-time-series-data-in-sqlite-best-practices) - Snapshot storage patterns
+- [SoFi Export Capabilities](https://support.sofi.com/hc/en-us/articles/12905841091597-Can-I-export-my-SoFi-Money-transactions) - Transaction export only, no investment CSV
+- [Concentration Risk Thresholds](https://resolvepay.com/blog/12-statistics-illustrating-concentration-risk-thresholds-lenders-watch) - Industry thresholds, HHI calculations
+- [Dividend Date Explanation](https://www.dividend.com/dividend-investing-101/dividend-dates/) - Ex-date vs payment date mechanics
+- [PHP Refactoring Patterns](https://www.cloudbees.com/blog/how-to-refactor-a-monolithic-codebase-over-time) - Strangler Fig pattern, incremental refactoring
+- [Refactoring Old Monolith Architecture](https://medium.com/insiderengineering/refactoring-old-monolith-architecture-a-comprehensive-guide-7c192d7612e8) - Service extraction patterns
+- [Stock Market Sectors 2026](https://finance.yahoo.com/sectors/) - GICS classification system, sector updates
 
 ---
-*Pitfalls research for: Stockd brokerage sync integration*
-*Researched: 2026-02-09*
+*Pitfalls research for: Stockd v1.2 - Portfolio Analytics & SoFi Import*
+*Researched: 2026-02-11*

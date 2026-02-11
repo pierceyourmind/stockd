@@ -1,682 +1,801 @@
-# Architecture Research: Brokerage Account Sync Integration
+# Architecture Research: Portfolio Analytics Integration
 
-**Domain:** Stock portfolio tracker with brokerage account sync
-**Researched:** 2026-02-09
+**Domain:** Stock portfolio analytics (historical value, sector classification, return calculations, concentration analysis)
+**Researched:** 2026-02-11
 **Confidence:** HIGH
 
-## Standard Architecture for Brokerage Sync Integration
+## Executive Summary
 
-### System Overview
+Portfolio analytics features integrate cleanly into Stockd's existing monolithic PHP/Alpine.js/SQLite architecture with minimal structural changes. The key insight: **use lazy snapshot generation on page load** instead of cron jobs. New tables store classification data and historical snapshots. New API endpoints compute analytics on-demand. Alpine.js components consume these endpoints and render charts using existing Chart.js infrastructure.
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                        Frontend Layer (index.php)                     │
-│  ┌────────────┐  ┌──────────────┐  ┌────────────┐  ┌─────────────┐  │
-│  │  Account   │  │  Connection  │  │  Holdings  │  │   Sync      │  │
-│  │  Selector  │  │   Button     │  │   Display  │  │   Status    │  │
-│  └─────┬──────┘  └──────┬───────┘  └─────┬──────┘  └──────┬──────┘  │
-│        │ Alpine.js      │               │              │              │
-├────────┴────────────────┴───────────────┴──────────────┴──────────────┤
-│                         API Layer (api.php)                           │
-│  ┌────────────┐  ┌──────────────┐  ┌────────────┐  ┌─────────────┐  │
-│  │  OAuth     │  │  Connection  │  │  Holdings  │  │  Webhook    │  │
-│  │  Handler   │  │  Manager     │  │   Sync     │  │  Receiver   │  │
-│  └─────┬──────┘  └──────┬───────┘  └─────┬──────┘  └──────┬──────┘  │
-│        │                │               │              │              │
-│        └────────────────┴───────────────┴──────────────┘              │
-│                         │                                             │
-│                   ┌─────▼──────┐                                      │
-│                   │  SnapTrade │                                      │
-│                   │  PHP SDK   │                                      │
-│                   └─────┬──────┘                                      │
-├─────────────────────────┴─────────────────────────────────────────────┤
-│                      Background Layer (cron.php)                      │
-│  ┌────────────┐  ┌──────────────┐  ┌────────────┐                    │
-│  │  Daily     │  │  Fallback    │  │  Stale     │                    │
-│  │  Sync Job  │  │  Polling     │  │  Detection │                    │
-│  └────────────┘  └──────────────┘  └────────────┘                    │
-├───────────────────────────────────────────────────────────────────────┤
-│                      Data Layer (SQLite)                              │
-│  ┌──────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐ │
-│  │  stocks  │  │  connections │  │  positions   │  │  sync_log    │ │
-│  └──────────┘  └──────────────┘  └──────────────┘  └──────────────┘ │
-└───────────────────────────────────────────────────────────────────────┘
-                           ▲
-                           │ HTTPS (via Cloudflare Tunnel)
-                           │
-                  ┌────────▼────────┐
-                  │   SnapTrade     │
-                  │   API Service   │
-                  │  (OAuth server, │
-                  │   Webhooks,     │
-                  │   Holdings API) │
-                  └─────────────────┘
-```
+**Critical architectural decision:** Snapshots are created/updated lazily when the user loads the portfolio page, not on a schedule. This preserves Stockd's zero-dependency, user-initiated design while enabling historical value tracking.
 
-### Component Responsibilities
-
-| Component | Responsibility | Typical Implementation |
-|-----------|----------------|------------------------|
-| **OAuth Handler** | Initiates connection flow, receives callbacks, stores tokens | GET endpoint for initiate, POST endpoint for callback with token exchange |
-| **Connection Manager** | CRUD operations for brokerage connections, status monitoring | API endpoints wrapping SnapTrade SDK connection methods |
-| **Holdings Sync** | Fetches positions/balances, transforms to local schema, updates database | Batch processing with upsert logic, handles account grouping |
-| **Webhook Receiver** | Receives and validates SnapTrade event notifications | POST endpoint with HMAC signature verification |
-| **Sync Job** | Scheduled refresh of holdings data, detects stale connections | PHP script triggered by cron, loops through active connections |
-| **Account Selector** | Frontend UI for choosing between manual stocks and synced accounts | Alpine.js component with dropdown, filters display by account |
-| **Connection Button** | Triggers OAuth flow, opens SnapTrade Connection Portal | Opens iframe or new window, listens for success/error messages |
-| **Holdings Display** | Shows synced positions alongside manual entries, visual distinction | Merged table view with badges for sync source |
-| **Sync Status** | Displays last sync time, connection health, refresh controls | Live status indicators, manual refresh trigger |
-
-## Recommended Project Structure
+## System Overview
 
 ```
-stockd/
-├── api.php                    # Main API file (extends with new endpoints)
-├── index.php                  # Frontend (extends with sync UI components)
-├── cron.php                   # NEW: Background sync job
-├── webhook.php                # NEW: SnapTrade webhook receiver
-├── vendor/                    # Composer dependencies (SnapTrade SDK)
-├── config/
-│   └── snaptrade.php          # NEW: SnapTrade credentials
-├── db/
-│   ├── stocks.db              # Existing database (extended schema)
-│   └── migrations/            # NEW: Schema migration scripts
-│       ├── 001_connections.sql
-│       ├── 002_positions.sql
-│       └── 003_sync_log.sql
-└── .planning/
-    └── research/
-        └── ARCHITECTURE.md    # This file
+┌─────────────────────────────────────────────────────────────┐
+│                    Frontend (index.php)                      │
+│  Alpine.js SPA (~2,968 lines)                                │
+├─────────────────────────────────────────────────────────────┤
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │
+│  │ Stock Cards  │  │  Analytics   │  │   Import     │       │
+│  │ (existing)   │  │  Dashboard   │  │   Modal      │       │
+│  │              │  │  (NEW)       │  │  (existing)  │       │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘       │
+│         │                 │                 │                │
+├─────────┴─────────────────┴─────────────────┴────────────────┤
+│                    Backend (api.php)                         │
+│  PHP match() router (~1,386 lines)                           │
+├─────────────────────────────────────────────────────────────┤
+│  ┌───────────┐  ┌────────────┐  ┌────────────┐              │
+│  │  Stocks   │  │ Portfolio  │  │  Sector    │              │
+│  │   CRUD    │  │ Analytics  │  │ Enrichment │              │
+│  │ (existing)│  │   (NEW)    │  │   (NEW)    │              │
+│  └─────┬─────┘  └─────┬──────┘  └─────┬──────┘              │
+│        │              │               │                      │
+├────────┴──────────────┴───────────────┴──────────────────────┤
+│                    SQLite (db/stocks.db)                     │
+│  ┌────────┐  ┌─────────┐  ┌────────────┐  ┌──────────┐      │
+│  │ stocks │  │ alerts  │  │ snapshots  │  │  sector  │      │
+│  │        │  │         │  │   (NEW)    │  │  _cache  │      │
+│  │        │  │         │  │            │  │  (NEW)   │      │
+│  └────────┘  └─────────┘  └────────────┘  └──────────┘      │
+└─────────────────────────────────────────────────────────────┘
+
+External: Yahoo Finance API (quote, history, profile for sector data)
 ```
 
-### Structure Rationale
+## NEW vs EXISTING Components
 
-- **Monolithic approach preserved**: Single api.php contains all business logic, follows existing pattern
-- **Separate webhook endpoint**: Isolates webhook receiver from main API to simplify security (different auth mechanism)
-- **Background job as separate file**: cron.php runs independently via system cron, doesn't block web requests
-- **Configuration extraction**: SnapTrade credentials outside version control, loaded at runtime
-- **Schema migrations**: Track database changes incrementally, enable rollback if needed
+### New Database Tables (2)
 
-## Architectural Patterns
-
-### Pattern 1: OAuth Callback Flow with Cloudflare Tunnel
-
-**What:** OAuth requires public HTTPS redirect URL. Local dev uses Cloudflare Tunnel to expose localhost securely.
-
-**When to use:** When developing locally but integrating with third-party OAuth providers that mandate HTTPS callbacks.
-
-**Trade-offs:**
-- **Pro**: No need for separate staging environment just for OAuth testing
-- **Pro**: Matches production URL structure, prevents redirect URI mismatches
-- **Con**: Adds dependency on Cloudflare service availability
-- **Con**: Debugging OAuth issues requires checking both local logs and Cloudflare dashboard
-
-**Example:**
-```php
-// api.php - OAuth initiation
-case 'connectBrokerage':
-    $snaptrade = new SnapTrade\Client([
-        'clientId' => SNAPTRADE_CLIENT_ID,
-        'consumerKey' => SNAPTRADE_CONSUMER_KEY
-    ]);
-
-    // Register user if not exists
-    $userId = getUserId(); // From session
-    $userSecret = getUserSecret(); // Generate or retrieve from DB
-
-    $snaptrade->authentication->registerSnapTradeUser([
-        'userId' => $userId
-    ]);
-
-    // Generate connection portal URL
-    $portal = $snaptrade->authentication->getConnectionPortalUrl([
-        'userId' => $userId,
-        'userSecret' => $userSecret,
-        'redirect' => 'https://your-tunnel.trycloudflare.com/?action=brokerageCallback'
-    ]);
-
-    // Return portal URL to frontend
-    echo json_encode(['portalUrl' => $portal['url']]);
-    break;
-
-// api.php - OAuth callback handler
-case 'brokerageCallback':
-    // SnapTrade redirects here after user authorizes
-    // Connection automatically created in SnapTrade system
-
-    $connectionId = $_GET['connectionId'] ?? null;
-    $userId = getUserId();
-
-    if ($connectionId) {
-        // Store connection in local database
-        $stmt = $db->prepare("
-            INSERT INTO connections (user_id, connection_id, status, created_at)
-            VALUES (:user_id, :connection_id, 'active', datetime('now'))
-        ");
-        $stmt->bindValue(':user_id', $userId);
-        $stmt->bindValue(':connection_id', $connectionId);
-        $stmt->execute();
-
-        // Trigger initial holdings sync
-        syncHoldings($userId, $connectionId);
-    }
-
-    // Redirect back to app
-    header('Location: /index.php?syncSuccess=1');
-    break;
-```
-
-### Pattern 2: Webhook + Polling Hybrid Sync
-
-**What:** Combine SnapTrade webhooks for real-time updates with fallback polling via cron to ensure data consistency.
-
-**When to use:** When you need reliable data freshness but can't guarantee webhook delivery (network issues, server downtime during webhook send).
-
-**Trade-offs:**
-- **Pro**: Real-time updates when webhooks work (most of the time)
-- **Pro**: Guaranteed eventual consistency even if webhooks fail
-- **Con**: Slightly more complex than pure polling
-- **Con**: Potential duplicate syncs if webhook arrives just before cron runs
-
-**Example:**
-```php
-// webhook.php - Receives SnapTrade events
-<?php
-require_once 'vendor/autoload.php';
-require_once 'config/snaptrade.php';
-
-// Verify webhook signature
-$signature = $_SERVER['HTTP_SIGNATURE'] ?? '';
-$body = file_get_contents('php://input');
-$expectedSig = hash_hmac('sha256', $body, SNAPTRADE_CONSUMER_KEY);
-
-if (!hash_equals($expectedSig, $signature)) {
-    http_response_code(401);
-    exit('Invalid signature');
-}
-
-$event = json_decode($body, true);
-
-// Log webhook receipt
-$db = new SQLite3('db/stocks.db');
-$stmt = $db->prepare("
-    INSERT INTO sync_log (event_type, connection_id, timestamp, payload)
-    VALUES (:event_type, :connection_id, datetime('now'), :payload)
-");
-$stmt->bindValue(':event_type', $event['type']);
-$stmt->bindValue(':connection_id', $event['connectionId']);
-$stmt->bindValue(':payload', $body);
-$stmt->execute();
-
-// Handle specific event types
-switch ($event['type']) {
-    case 'ACCOUNT_HOLDINGS_UPDATED':
-        // Trigger immediate sync for this connection
-        syncHoldings($event['userId'], $event['connectionId']);
-        break;
-
-    case 'CONNECTION_BROKEN':
-        // Mark connection as requiring re-auth
-        $stmt = $db->prepare("
-            UPDATE connections
-            SET status = 'broken', updated_at = datetime('now')
-            WHERE connection_id = :connection_id
-        ");
-        $stmt->bindValue(':connection_id', $event['connectionId']);
-        $stmt->execute();
-        break;
-
-    case 'CONNECTION_FIXED':
-        $stmt = $db->prepare("
-            UPDATE connections
-            SET status = 'active', updated_at = datetime('now')
-            WHERE connection_id = :connection_id
-        ");
-        $stmt->bindValue(':connection_id', $event['connectionId']);
-        $stmt->execute();
-        break;
-}
-
-http_response_code(200);
-echo json_encode(['status' => 'processed']);
-?>
-```
-
-```php
-// cron.php - Fallback polling (runs every 6 hours)
-<?php
-require_once 'vendor/autoload.php';
-require_once 'config/snaptrade.php';
-
-$db = new SQLite3('db/stocks.db');
-
-// Find connections not synced in last 6 hours
-$staleConnections = $db->query("
-    SELECT user_id, connection_id
-    FROM connections
-    WHERE status = 'active'
-    AND (last_sync_at IS NULL OR last_sync_at < datetime('now', '-6 hours'))
-");
-
-$snaptrade = new SnapTrade\Client([
-    'clientId' => SNAPTRADE_CLIENT_ID,
-    'consumerKey' => SNAPTRADE_CONSUMER_KEY
-]);
-
-while ($conn = $staleConnections->fetchArray(SQLITE3_ASSOC)) {
-    try {
-        syncHoldings($conn['user_id'], $conn['connection_id']);
-
-        // Update last sync timestamp
-        $stmt = $db->prepare("
-            UPDATE connections
-            SET last_sync_at = datetime('now')
-            WHERE connection_id = :connection_id
-        ");
-        $stmt->bindValue(':connection_id', $conn['connection_id']);
-        $stmt->execute();
-
-        echo "Synced {$conn['connection_id']}\n";
-    } catch (Exception $e) {
-        error_log("Sync failed for {$conn['connection_id']}: " . $e->getMessage());
-    }
-}
-
-function syncHoldings($userId, $connectionId) {
-    global $snaptrade, $db;
-
-    // Fetch holdings from SnapTrade
-    $holdings = $snaptrade->accountInformation->getUserHoldings([
-        'userId' => $userId,
-        'userSecret' => getUserSecret($userId)
-    ]);
-
-    // Transform and store in local database
-    foreach ($holdings as $holding) {
-        $accountId = $holding['account']['id'];
-
-        foreach ($holding['positions'] as $position) {
-            $symbol = $position['symbol']['symbol'];
-            $shares = $position['units'];
-            $avgPrice = $position['average_purchase_price'];
-
-            // Upsert position with prepared statement
-            $stmt = $db->prepare("
-                INSERT OR REPLACE INTO positions
-                (connection_id, account_id, symbol, shares, avg_price, synced_at)
-                VALUES
-                (:connection_id, :account_id, :symbol, :shares, :avg_price, datetime('now'))
-            ");
-            $stmt->bindValue(':connection_id', $connectionId);
-            $stmt->bindValue(':account_id', $accountId);
-            $stmt->bindValue(':symbol', $symbol);
-            $stmt->bindValue(':shares', $shares);
-            $stmt->bindValue(':avg_price', $avgPrice);
-            $stmt->execute();
-        }
-    }
-}
-?>
-```
-
-### Pattern 3: Sub-Account Grouping with Account Selector
-
-**What:** SnapTrade returns multiple accounts per connection (e.g., TFSA, RRSP, margin). Group these logically and let users filter views.
-
-**When to use:** When users have multiple brokerage accounts and want to see portfolio breakdown by account type or institution.
-
-**Trade-offs:**
-- **Pro**: Matches how users think about their investments (tax-advantaged vs taxable)
-- **Pro**: Enables accurate performance tracking per account
-- **Con**: More complex UI with nested dropdowns
-- **Con**: Account aggregation requires careful handling of duplicate tickers across accounts
-
-**Example:**
-```php
-// api.php - List accounts endpoint
-case 'listAccounts':
-    $db = new SQLite3('db/stocks.db');
-
-    // Fetch manual entries
-    $manual = $db->query("
-        SELECT DISTINCT account, COUNT(*) as count
-        FROM stocks
-        WHERE is_watchlist = 0
-        GROUP BY account
-    ");
-
-    $accounts = [];
-    while ($row = $manual->fetchArray(SQLITE3_ASSOC)) {
-        $accounts[] = [
-            'id' => 'manual_' . $row['account'],
-            'type' => 'manual',
-            'name' => $row['account'] ?: 'Default',
-            'count' => $row['count']
-        ];
-    }
-
-    // Fetch synced connections
-    $connections = $db->query("
-        SELECT c.connection_id, c.institution_name,
-               COUNT(DISTINCT p.account_id) as account_count
-        FROM connections c
-        LEFT JOIN positions p ON c.connection_id = p.connection_id
-        WHERE c.status = 'active'
-        GROUP BY c.connection_id
-    ");
-
-    while ($row = $connections->fetchArray(SQLITE3_ASSOC)) {
-        $accounts[] = [
-            'id' => 'sync_' . $row['connection_id'],
-            'type' => 'synced',
-            'name' => $row['institution_name'],
-            'accountCount' => $row['account_count']
-        ];
-    }
-
-    echo json_encode(['accounts' => $accounts]);
-    break;
-```
-
-Frontend (index.php Alpine.js component):
-```javascript
-// Add to Alpine.js data
-accountFilter: 'all',
-accounts: [],
-
-// Fetch accounts on init
-fetchAccounts() {
-    fetch('api.php?action=listAccounts')
-        .then(r => r.json())
-        .then(data => {
-            this.accounts = [
-                { id: 'all', name: 'All Accounts', type: 'filter' },
-                ...data.accounts
-            ];
-        });
-},
-
-// Filter stocks by selected account
-get filteredStocks() {
-    if (this.accountFilter === 'all') {
-        return this.stocks;
-    }
-
-    if (this.accountFilter.startsWith('manual_')) {
-        const account = this.accountFilter.replace('manual_', '');
-        return this.stocks.filter(s => s.account === account && !s.is_synced);
-    }
-
-    if (this.accountFilter.startsWith('sync_')) {
-        const connectionId = this.accountFilter.replace('sync_', '');
-        return this.stocks.filter(s => s.connection_id === connectionId && s.is_synced);
-    }
-
-    return this.stocks;
-}
-```
-
-## Data Flow
-
-### OAuth Connection Flow
-
-```
-User clicks "Connect Brokerage"
-    ↓
-Frontend → api.php?action=connectBrokerage
-    ↓
-api.php calls SnapTrade SDK: registerSnapTradeUser()
-    ↓
-api.php calls SnapTrade SDK: getConnectionPortalUrl()
-    ↓
-Frontend opens portal (iframe or new window)
-    ↓
-User selects institution → enters credentials → authorizes
-    ↓
-SnapTrade creates connection → redirects to callback URL
-    ↓
-Cloudflare Tunnel → api.php?action=brokerageCallback
-    ↓
-api.php stores connection in database
-    ↓
-api.php triggers initial syncHoldings()
-    ↓
-Frontend shows success message + synced positions
-```
-
-### Holdings Sync Flow
-
-```
-Trigger (webhook or cron)
-    ↓
-syncHoldings() fetches from SnapTrade API
-    ↓
-SnapTrade returns: accounts[] → positions[] → balances[]
-    ↓
-Transform SnapTrade format to local schema
-    ↓
-For each position:
-    - Lookup or create ticker in stocks table (with is_synced flag)
-    - Upsert position in positions table
-    - Update last_sync_at timestamp
-    ↓
-Log sync completion in sync_log table
-    ↓
-Frontend polls for updates or receives SSE notification
-```
-
-### Key Data Flows
-
-1. **Initial Connection**: User → OAuth Portal → Callback → DB Insert → Initial Sync → UI Refresh
-2. **Daily Sync**: Cron → Check Stale Connections → Batch Sync → Update Timestamps → Log Results
-3. **Webhook Update**: SnapTrade Event → Verify Signature → Immediate Sync → DB Update → (Optional) SSE to Frontend
-4. **Manual Refresh**: User clicks refresh → API call → Force Sync → Return fresh data
-
-## Database Schema Extensions
-
-### New Tables Required
+#### 1. `portfolio_snapshots`
+**Purpose:** Daily portfolio value tracking for historical charts
 
 ```sql
--- Stores SnapTrade connection metadata
-CREATE TABLE connections (
+CREATE TABLE portfolio_snapshots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id VARCHAR(50) NOT NULL,          -- Maps to your user system
-    user_secret VARCHAR(100) NOT NULL,     -- SnapTrade user secret
-    connection_id VARCHAR(100) NOT NULL UNIQUE,  -- SnapTrade connection ID
-    institution_name VARCHAR(100),         -- E.g., "Wealthsimple", "Interactive Brokers"
-    status VARCHAR(20) DEFAULT 'active',   -- active, broken, deleted
-    last_sync_at DATETIME,                 -- Last successful holdings fetch
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    snapshot_date DATE NOT NULL UNIQUE,
+    total_value DECIMAL(15,2) NOT NULL,
+    total_cost DECIMAL(15,2) NOT NULL,
+    total_gain DECIMAL(15,2) NOT NULL,
+    gain_percent DECIMAL(8,4) NOT NULL,
+    holdings_count INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- Stores synced positions from SnapTrade
-CREATE TABLE positions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    connection_id VARCHAR(100) NOT NULL,   -- Foreign key to connections
-    account_id VARCHAR(100) NOT NULL,      -- SnapTrade account ID (sub-account)
-    account_name VARCHAR(100),             -- E.g., "TFSA", "RRSP", "Margin"
-    symbol VARCHAR(10) NOT NULL,
-    shares DECIMAL(10,4) NOT NULL,
-    avg_price DECIMAL(10,2),               -- Average purchase price from brokerage
-    current_price DECIMAL(10,2),           -- Cached from last quote fetch
-    currency VARCHAR(3) DEFAULT 'USD',
-    synced_at DATETIME,                    -- When this position was last synced
-    UNIQUE(connection_id, account_id, symbol)
-);
-
--- Audit log for sync operations and webhook events
-CREATE TABLE sync_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    event_type VARCHAR(50),                -- WEBHOOK, CRON_SYNC, MANUAL_SYNC
-    connection_id VARCHAR(100),
-    status VARCHAR(20),                    -- success, failed
-    message TEXT,                          -- Error details or event payload
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
--- Extend existing stocks table with sync flag
-ALTER TABLE stocks ADD COLUMN is_synced BOOLEAN DEFAULT 0;
-ALTER TABLE stocks ADD COLUMN connection_id VARCHAR(100);
-ALTER TABLE stocks ADD COLUMN account_id VARCHAR(100);
+CREATE INDEX idx_snapshots_date ON portfolio_snapshots(snapshot_date);
 ```
 
-### Schema Design Rationale
+**Population strategy:**
+1. **Initial backfill:** When feature first loads, backfill last 90 days using Yahoo historical prices
+2. **Daily updates:** On page load, check if today's snapshot exists. If not, create it.
+3. **Lazy generation:** No cron job — snapshots created when user visits portfolio page
 
-- **Separate positions table**: Synced holdings kept distinct from manual entries to prevent accidental modification
-- **connection_id in stocks**: Allows mixed view of manual + synced holdings with clear source attribution
-- **Audit log**: Critical for debugging sync failures and tracking data freshness
-- **Unique constraint on positions**: Prevents duplicate entries during upsert operations
+#### 2. `sector_cache`
+**Purpose:** Cache Yahoo Finance sector/industry/quoteType data to avoid API spam
 
-## Scaling Considerations
+```sql
+CREATE TABLE sector_cache (
+    symbol VARCHAR(10) PRIMARY KEY,
+    sector VARCHAR(100),
+    industry VARCHAR(200),
+    quote_type VARCHAR(20),        -- EQUITY, ETF, MUTUALFUND
+    fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 
-| Scale | Architecture Adjustments |
-|-------|--------------------------|
-| **1 user (local dev)** | Monolithic api.php handles everything, simple cron job, SQLite sufficient |
-| **10-100 users** | Add connection pooling for SnapTrade API calls, implement rate limiting (1 req/sec per account), consider Redis for webhook deduplication |
-| **1000+ users** | Move background sync to queue system (e.g., Beanstalkd), split webhook receiver to separate process, monitor SnapTrade API quotas closely |
+CREATE INDEX idx_sector_fetched ON sector_cache(fetched_at);
+```
 
-### Scaling Priorities
+**Cache invalidation:** Refresh sector data if `fetched_at` is older than 30 days (sectors rarely change)
 
-1. **First bottleneck: SnapTrade API rate limits** - Happens when syncing many accounts simultaneously. Fix by staggering cron jobs (not all at once) and respecting 1 trade/sec limit per account. Implement exponential backoff on 429 responses.
+### New API Endpoints (5)
 
-2. **Second bottleneck: SQLite write contention** - Occurs when cron syncs + webhook updates + user queries hit database simultaneously. Fix by using WAL mode (`PRAGMA journal_mode=WAL`), or migrate to PostgreSQL if contention persists. For local dev, this is unlikely to be an issue.
+All added to `api.php` match() router. Follows existing endpoint pattern.
 
-## Anti-Patterns
+| Endpoint | Method | Purpose | Response |
+|----------|--------|---------|----------|
+| `?action=portfolioHistory` | GET | Get daily snapshots for chart | `{snapshots: [{date, value, gain}...]}` |
+| `?action=portfolioReturns` | GET | Calculate time-based returns | `{day: {$, %}, week: {$, %}, month: {$, %}, ytd: {$, %}, all: {$, %}}` |
+| `?action=sectorBreakdown` | GET | Portfolio allocation by sector | `{sectors: [{name, value, percent, stocks}...]}` |
+| `?action=concentrationWarnings` | GET | Detect over-concentrated positions | `{warnings: [{type, message, severity, stocks}...]}` |
+| `?action=enrichStock&symbol=X` | POST | Fetch and cache sector data | `{symbol, sector, industry, quoteType}` |
 
-### Anti-Pattern 1: Syncing on Every Page Load
+### New Alpine.js Components (1)
 
-**What people do:** Call SnapTrade API to fetch fresh holdings every time user visits portfolio page, thinking it ensures up-to-date data.
+**Portfolio Analytics Dashboard** — New collapsible section in `index.php` (similar to existing benchmark section)
 
-**Why it's wrong:**
-- Violates SnapTrade rate limits quickly
-- Adds 1-3 second latency to every page load
-- Wastes API quota on unchanged data (holdings rarely change minute-to-minute)
+Location: Insert after portfolio summary header, before stock cards grid
 
-**Do this instead:** Cache synced positions in local database, display cached data immediately, show "last synced: 2 hours ago" with manual refresh button. Use webhooks + cron to keep cache fresh in background.
+Components:
+- Historical value chart (Chart.js line chart)
+- Time-based returns summary cards (1D, 1W, 1M, YTD, All)
+- Sector breakdown doughnut chart
+- Concentration warnings alert box
+- Annual income projection (extends existing dividend data)
 
-### Anti-Pattern 2: Storing Access Tokens Instead of Using SnapTrade's User Management
+Estimated size: ~300 lines (similar to existing chart sections)
 
-**What people do:** Treat SnapTrade like a raw OAuth provider, try to store and manage brokerage access tokens directly.
+### Modified Components
 
-**Why it's wrong:**
-- SnapTrade handles token refresh automatically via userId/userSecret
-- Direct token storage violates SnapTrade's security model
-- Unnecessary complexity when SDK already manages auth
+#### 1. `api.php` — Add 5 new endpoint handlers
+**Current:** 1,386 lines with 16 endpoints
+**Change:** +300 lines (5 new functions)
+**Integration point:** Add to existing match() router
 
-**Do this instead:** Register SnapTrade user once per app user, store only userId and userSecret. Let SnapTrade SDK handle all token lifecycle management. Your connection_id is all you need for subsequent API calls.
+#### 2. `index.php` — Add analytics dashboard UI
+**Current:** 2,968 lines (Alpine.js state + template)
+**Change:** +400 lines (analytics section + state)
+**Integration point:** Insert dashboard after line ~1256 (portfolio summary)
 
-### Anti-Pattern 3: Treating Synced Positions as Editable Records
+#### 3. `stockApp()` Alpine.js component — Add analytics state
+**Current state:** stocks, quotes, charts, alerts, benchmarks
+**New state:**
+```javascript
+portfolioHistory: [],      // Daily snapshots
+portfolioReturns: {},       // Time-based returns
+sectorBreakdown: [],        // Sector allocation
+concentrationWarnings: [], // Warnings
+loadingAnalytics: false
+```
 
-**What people do:** Allow users to modify synced holdings (change shares, purchase price), expecting changes to persist.
+**New methods:**
+```javascript
+async loadPortfolioHistory()      // Fetch and render snapshots
+async updateDailySnapshot()        // Create today's snapshot if missing
+async loadSectorBreakdown()        // Fetch sector allocation
+async enrichStockSectorData()      // Lazy-load sector for a stock
+```
 
-**Why it's wrong:**
-- Next sync overwrites manual edits with brokerage data
-- Creates data inconsistency confusion
-- Defeats purpose of automatic sync
+## Data Flow Patterns
 
-**Do this instead:** Make synced positions read-only in UI (show "lock" icon or grayed-out edit button). If user wants to track positions differently, provide "copy to manual entry" action that creates independent stock record.
+### Pattern 1: Lazy Snapshot Generation (Daily Update Without Cron)
 
-### Anti-Pattern 4: Single Webhook Endpoint for All Events Without Filtering
+**Problem:** Need daily portfolio value snapshots, but no cron job allowed
+**Solution:** Check and create snapshot on page load
 
-**What people do:** Process every SnapTrade webhook event type equally, even ones irrelevant to your app (e.g., USER_DELETED when you don't delete users).
+```
+User loads portfolio page
+    ↓
+Alpine init() hook fires
+    ↓
+Check: Does today's snapshot exist in portfolio_snapshots?
+    ↓ (NO)
+Create snapshot:
+    1. For each stock: current_price × shares = position_value
+    2. Sum all positions = total_value
+    3. Sum all cost_basis = total_cost
+    4. INSERT INTO portfolio_snapshots (snapshot_date, total_value, ...)
+    ↓ (YES or after creation)
+Load last 90 days of snapshots for chart
+    ↓
+Render Chart.js line chart
+```
 
-**Why it's wrong:**
-- Unnecessary processing overhead
-- Logs filled with ignored events
-- Harder to debug relevant webhook issues
+**Implementation:**
+```javascript
+// In Alpine.js init()
+async init() {
+    await this.loadStocks();
+    await this.updateDailySnapshot();  // NEW: Create today's snapshot if missing
+    await this.loadPortfolioHistory(); // NEW: Load historical data
+    this.startAutoRefresh();
+}
 
-**Do this instead:** Whitelist only event types you care about (ACCOUNT_HOLDINGS_UPDATED, CONNECTION_BROKEN, CONNECTION_FIXED). Return 200 for others but log with "ignored" status. Add webhook event type filter in SnapTrade dashboard if available.
+async updateDailySnapshot() {
+    const res = await fetch('api.php?action=updateSnapshot');
+    // Backend checks if today's snapshot exists, creates if not
+}
+```
+
+**Backend logic:**
+```php
+function updateSnapshot(PDO $pdo): never {
+    $today = date('Y-m-d');
+
+    // Check if today's snapshot exists
+    $stmt = $pdo->prepare("SELECT id FROM portfolio_snapshots WHERE snapshot_date = ?");
+    $stmt->execute([$today]);
+
+    if ($stmt->fetch()) {
+        jsonResponse(['message' => 'Snapshot already exists']);
+    }
+
+    // Calculate current portfolio value
+    $stocks = $pdo->query("SELECT * FROM stocks WHERE is_watchlist = 0 AND shares > 0")->fetchAll();
+    $totalValue = 0;
+    $totalCost = 0;
+
+    foreach ($stocks as $stock) {
+        $quote = fetchQuote($stock['symbol']); // Use existing quote function
+        $totalValue += $quote['price'] * $stock['shares'];
+        $totalCost += ($stock['purchase_price'] ?? 0) * $stock['shares'];
+    }
+
+    $totalGain = $totalValue - $totalCost;
+    $gainPercent = $totalCost > 0 ? ($totalGain / $totalCost) * 100 : 0;
+
+    $stmt = $pdo->prepare("
+        INSERT INTO portfolio_snapshots (snapshot_date, total_value, total_cost, total_gain, gain_percent, holdings_count)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ");
+    $stmt->execute([$today, $totalValue, $totalCost, $totalGain, $gainPercent, count($stocks)]);
+
+    jsonResponse(['message' => 'Snapshot created']);
+}
+```
+
+**Why this works:**
+- User visits page daily → snapshot created daily
+- No background processes needed
+- If user doesn't visit for days, snapshots will have gaps (acceptable)
+- Backfill can fill historical gaps using Yahoo historical prices
+
+### Pattern 2: Historical Backfill on First Load
+
+**Problem:** Need historical data for new users
+**Solution:** Detect first load, backfill using Yahoo Finance historical prices
+
+```
+First time portfolio analytics loads
+    ↓
+Check: How many snapshots exist?
+    ↓ (< 5)
+Trigger backfill:
+    For each date in last 90 days:
+        For each stock holding:
+            Fetch historical price for that date from Yahoo
+            Calculate position value = historical_price × shares
+        Sum all positions = day_total_value
+        INSERT snapshot for that date
+    ↓
+Display "Backfilling historical data..." progress
+    ↓
+Render chart when complete
+```
+
+**Implementation:**
+```php
+function backfillSnapshots(PDO $pdo): never {
+    $days = 90; // Backfill last 90 days
+    $stocks = $pdo->query("SELECT * FROM stocks WHERE is_watchlist = 0 AND shares > 0")->fetchAll();
+
+    for ($i = $days; $i >= 0; $i--) {
+        $date = date('Y-m-d', strtotime("-$i days"));
+
+        // Skip if snapshot already exists
+        $stmt = $pdo->prepare("SELECT id FROM portfolio_snapshots WHERE snapshot_date = ?");
+        $stmt->execute([$date]);
+        if ($stmt->fetch()) continue;
+
+        $totalValue = 0;
+        $totalCost = 0;
+
+        foreach ($stocks as $stock) {
+            // Fetch historical price for $date from Yahoo
+            $price = fetchHistoricalPrice($stock['symbol'], $date);
+            $totalValue += $price * $stock['shares'];
+            $totalCost += ($stock['purchase_price'] ?? 0) * $stock['shares'];
+        }
+
+        $totalGain = $totalValue - $totalCost;
+        $gainPercent = $totalCost > 0 ? ($totalGain / $totalCost) * 100 : 0;
+
+        $stmt = $pdo->prepare("
+            INSERT INTO portfolio_snapshots (snapshot_date, total_value, total_cost, total_gain, gain_percent, holdings_count)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ");
+        $stmt->execute([$date, $totalValue, $totalCost, $totalGain, $gainPercent, count($stocks)]);
+    }
+
+    jsonResponse(['message' => 'Backfill complete']);
+}
+```
+
+### Pattern 3: Lazy Sector Enrichment
+
+**Problem:** Yahoo Finance profile API is slow (needs quoteSummary call)
+**Solution:** Enrich sector data on-demand, cache aggressively
+
+```
+User expands sector breakdown chart
+    ↓
+For each stock in portfolio:
+    Check: Does sector_cache have this symbol?
+        ↓ (YES, and fresh)
+        Use cached sector/industry
+        ↓ (NO or stale)
+        Fetch Yahoo quoteSummary for assetProfile
+        Extract sector, industry, quoteType
+        INSERT/UPDATE sector_cache
+    ↓
+Group stocks by sector
+    ↓
+Calculate % allocation per sector
+    ↓
+Render Chart.js doughnut chart
+```
+
+**API endpoint pattern:**
+```php
+function sectorBreakdown(PDO $pdo): never {
+    $stocks = $pdo->query("SELECT * FROM stocks WHERE is_watchlist = 0 AND shares > 0")->fetchAll();
+    $sectors = [];
+
+    foreach ($stocks as $stock) {
+        // Check cache
+        $stmt = $pdo->prepare("SELECT sector, industry FROM sector_cache WHERE symbol = ? AND fetched_at > datetime('now', '-30 days')");
+        $stmt->execute([$stock['symbol']]);
+        $cached = $stmt->fetch();
+
+        if (!$cached) {
+            // Fetch from Yahoo Finance
+            $profile = fetchYahooProfile($stock['symbol']); // quoteSummary?modules=assetProfile
+            $sector = $profile['sector'] ?? 'Unknown';
+            $industry = $profile['industry'] ?? 'Unknown';
+
+            // Cache it
+            $pdo->prepare("INSERT OR REPLACE INTO sector_cache (symbol, sector, industry, quote_type, fetched_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)")
+                ->execute([$stock['symbol'], $sector, $industry, $profile['quoteType'] ?? 'EQUITY']);
+        } else {
+            $sector = $cached['sector'];
+        }
+
+        $quote = fetchQuote($stock['symbol']);
+        $value = $quote['price'] * $stock['shares'];
+
+        if (!isset($sectors[$sector])) {
+            $sectors[$sector] = ['name' => $sector, 'value' => 0, 'stocks' => []];
+        }
+        $sectors[$sector]['value'] += $value;
+        $sectors[$sector]['stocks'][] = $stock['symbol'];
+    }
+
+    // Calculate percentages
+    $totalValue = array_sum(array_column($sectors, 'value'));
+    foreach ($sectors as &$sector) {
+        $sector['percent'] = $totalValue > 0 ? ($sector['value'] / $totalValue) * 100 : 0;
+    }
+
+    jsonResponse(['sectors' => array_values($sectors)]);
+}
+```
+
+**Yahoo Finance profile fetch:**
+```php
+function fetchYahooProfile(string $symbol): array {
+    $url = "https://query1.finance.yahoo.com/v10/finance/quoteSummary/" . urlencode($symbol) . "?modules=assetProfile";
+    $context = stream_context_create([
+        'http' => [
+            'header' => "User-Agent: Mozilla/5.0\r\n",
+            'timeout' => 10,
+        ],
+    ]);
+
+    $response = @file_get_contents($url, false, $context);
+    if ($response === false) return [];
+
+    $data = json_decode($response, true);
+    $profile = $data['quoteSummary']['result'][0]['assetProfile'] ?? [];
+
+    return [
+        'sector' => $profile['sector'] ?? 'Unknown',
+        'industry' => $profile['industry'] ?? 'Unknown',
+        'quoteType' => $data['quoteSummary']['result'][0]['quoteType']['quoteType'] ?? 'EQUITY',
+    ];
+}
+```
+
+### Pattern 4: Real-Time Return Calculations (No Storage)
+
+**Problem:** Calculate time-based returns (1D, 1W, 1M, YTD, All)
+**Solution:** Compute on-demand from snapshots table + current prices
+
+```
+User loads analytics dashboard
+    ↓
+Fetch current portfolio value (sum of current_price × shares)
+    ↓
+Query portfolio_snapshots for:
+    - Yesterday's snapshot (1D return)
+    - 1 week ago snapshot (1W return)
+    - 1 month ago snapshot (1M return)
+    - Jan 1 snapshot (YTD return)
+    - Oldest snapshot (All-time return)
+    ↓
+For each timeframe:
+    Return $ = current_value - historical_value
+    Return % = (Return $ / historical_value) × 100
+    ↓
+Return JSON
+```
+
+**Implementation:**
+```php
+function portfolioReturns(PDO $pdo): never {
+    // Calculate current portfolio value
+    $stocks = $pdo->query("SELECT * FROM stocks WHERE is_watchlist = 0 AND shares > 0")->fetchAll();
+    $currentValue = 0;
+    foreach ($stocks as $stock) {
+        $quote = fetchQuote($stock['symbol']);
+        $currentValue += $quote['price'] * $stock['shares'];
+    }
+
+    // Fetch historical values
+    $returns = [];
+    $timeframes = [
+        'day' => date('Y-m-d', strtotime('-1 day')),
+        'week' => date('Y-m-d', strtotime('-1 week')),
+        'month' => date('Y-m-d', strtotime('-1 month')),
+        'ytd' => date('Y') . '-01-01',
+    ];
+
+    foreach ($timeframes as $period => $date) {
+        $stmt = $pdo->prepare("SELECT total_value FROM portfolio_snapshots WHERE snapshot_date <= ? ORDER BY snapshot_date DESC LIMIT 1");
+        $stmt->execute([$date]);
+        $snapshot = $stmt->fetch();
+
+        if ($snapshot) {
+            $historicalValue = $snapshot['total_value'];
+            $gainDollar = $currentValue - $historicalValue;
+            $gainPercent = $historicalValue > 0 ? ($gainDollar / $historicalValue) * 100 : 0;
+
+            $returns[$period] = [
+                'value' => round($currentValue, 2),
+                'gain_dollar' => round($gainDollar, 2),
+                'gain_percent' => round($gainPercent, 2),
+            ];
+        }
+    }
+
+    // All-time: first snapshot
+    $stmt = $pdo->query("SELECT total_value FROM portfolio_snapshots ORDER BY snapshot_date ASC LIMIT 1");
+    $firstSnapshot = $stmt->fetch();
+    if ($firstSnapshot) {
+        $gainDollar = $currentValue - $firstSnapshot['total_value'];
+        $gainPercent = $firstSnapshot['total_value'] > 0 ? ($gainDollar / $firstSnapshot['total_value']) * 100 : 0;
+        $returns['all'] = [
+            'value' => round($currentValue, 2),
+            'gain_dollar' => round($gainDollar, 2),
+            'gain_percent' => round($gainPercent, 2),
+        ];
+    }
+
+    jsonResponse(['returns' => $returns]);
+}
+```
+
+### Pattern 5: Concentration Analysis (Computed, Not Stored)
+
+**Problem:** Warn about over-concentration (single stock >20%, sector >40%)
+**Solution:** Compute from current portfolio on-demand
+
+```javascript
+async function concentrationWarnings() {
+    const stocks = await fetchStocks();
+    const totalValue = calculateTotalValue(stocks);
+    const warnings = [];
+
+    // Check per-stock concentration
+    stocks.forEach(stock => {
+        const positionValue = stock.quote.price * stock.shares;
+        const percent = (positionValue / totalValue) * 100;
+
+        if (percent > 20) {
+            warnings.push({
+                type: 'stock',
+                severity: percent > 30 ? 'high' : 'medium',
+                message: `${stock.symbol} represents ${percent.toFixed(1)}% of your portfolio`,
+                stocks: [stock.symbol]
+            });
+        }
+    });
+
+    // Check sector concentration
+    const sectorBreakdown = await fetchSectorBreakdown();
+    sectorBreakdown.sectors.forEach(sector => {
+        if (sector.percent > 40) {
+            warnings.push({
+                type: 'sector',
+                severity: sector.percent > 50 ? 'high' : 'medium',
+                message: `${sector.name} represents ${sector.percent.toFixed(1)}% of your portfolio`,
+                stocks: sector.stocks
+            });
+        }
+    });
+
+    return warnings;
+}
+```
 
 ## Integration Points
 
-### External Services
+### Yahoo Finance API Endpoints Used
 
-| Service | Integration Pattern | Notes |
-|---------|---------------------|-------|
-| **SnapTrade API** | REST API via PHP SDK | All holdings, connections, and OAuth managed here. Rate limit: 1 req/sec per account for trades. |
-| **Cloudflare Tunnel** | Reverse proxy for OAuth callback | Exposes localhost:8080 as public HTTPS endpoint. Required for OAuth redirect URI. |
-| **Cron** | System cron calls cron.php | Runs every 6 hours to catch stale connections. Alternative: use Neuron PHP for in-process scheduling. |
-| **Yahoo Finance** | Existing price quote API | Keep for real-time quotes of synced positions (SnapTrade positions lack live prices). |
+| Data Needed | Endpoint | Module/Param | Fields Extracted |
+|-------------|----------|--------------|------------------|
+| Sector/Industry | `quoteSummary?modules=assetProfile` | assetProfile | sector, industry |
+| Quote Type | `quoteSummary?modules=quoteType` | quoteType | quoteType (EQUITY/ETF/etc) |
+| Historical Price | `chart?interval=1d&range=1y` | chart.result[0].indicators.quote[0] | close prices by timestamp |
+| Current Price | (existing) | Already implemented | regularMarketPrice |
 
-### Internal Boundaries
+**API call pattern (same as existing):**
+```php
+$context = stream_context_create([
+    'http' => [
+        'header' => "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\r\n",
+        'timeout' => 15,
+    ],
+]);
+$response = @file_get_contents($url, false, $context);
+```
 
-| Boundary | Communication | Notes |
-|----------|---------------|-------|
-| **api.php ↔ SnapTrade SDK** | Direct function calls | SDK handles HTTP requests, signatures, retries. Wrap SDK calls in try/catch for error handling. |
-| **webhook.php ↔ api.php** | Shared functions via include | Extract syncHoldings() to shared lib file to avoid code duplication. |
-| **cron.php ↔ SQLite** | Direct database queries | Read-only check for stale connections, write sync timestamps. Use transactions for batch updates. |
-| **Frontend ↔ api.php** | AJAX (fetch) calls | Add new endpoints: connectBrokerage, listConnections, syncHoldings, disconnectBrokerage. |
+### Chart.js Integration
 
-## Recommended Build Order
+**Existing chart infrastructure:** Already uses Chart.js for price charts
+**New charts:**
 
-Build these components in sequence to minimize integration issues:
+1. **Portfolio Value History** (Line chart)
+   - X-axis: Dates (last 90 days)
+   - Y-axis: Portfolio value ($)
+   - Dataset: Daily snapshots from `portfolio_snapshots` table
 
-1. **Database Schema** (1 session)
-   - Create migration scripts for new tables
-   - Test schema with sample data
-   - Add indexes for connection_id and account_id lookups
+2. **Sector Breakdown** (Doughnut chart)
+   - Segments: Sectors
+   - Values: % of portfolio
+   - Colors: Chart.js default palette
 
-2. **SnapTrade SDK Setup** (1 session)
-   - Install via Composer
-   - Create config file with credentials
-   - Test basic API call (registerSnapTradeUser)
+**Implementation pattern (matches existing):**
+```javascript
+new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: portfolioHistory.map(s => s.date),
+        datasets: [{
+            label: 'Portfolio Value',
+            data: portfolioHistory.map(s => s.value),
+            borderColor: '#58a6ff',
+            backgroundColor: 'rgba(88, 166, 255, 0.1)',
+            tension: 0.4
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { display: false }
+        }
+    }
+});
+```
 
-3. **OAuth Flow** (2-3 sessions)
-   - Implement connectBrokerage endpoint
-   - Set up Cloudflare Tunnel for local HTTPS
-   - Build callback handler
-   - Test end-to-end connection with sandbox brokerage
+### Alpine.js State Management
 
-4. **Holdings Sync** (2-3 sessions)
-   - Extract syncHoldings() function
-   - Transform SnapTrade position format to local schema
-   - Test upsert logic with multiple accounts
-   - Add error handling and logging
+**Existing pattern:** All state in single `stockApp()` function
+**New state integration:**
 
-5. **Webhook Receiver** (1-2 sessions)
-   - Create webhook.php with signature verification
-   - Register webhook URL in SnapTrade dashboard
-   - Test with SnapTrade webhook simulator
-   - Handle key event types (HOLDINGS_UPDATED, CONNECTION_BROKEN)
+```javascript
+function stockApp() {
+    return {
+        // EXISTING STATE
+        stocks: [],
+        tickerItems: [],
+        loading: true,
+        charts: {},
+        benchmarks: {},
 
-6. **Background Sync Job** (1 session)
-   - Create cron.php with stale connection detection
-   - Add to system crontab
-   - Test fallback sync behavior
+        // NEW STATE
+        portfolioHistory: [],           // Daily snapshots
+        portfolioReturns: {},            // Time-based returns
+        sectorBreakdown: [],             // Sector allocation
+        concentrationWarnings: [],       // Warnings
+        loadingAnalytics: false,
+        showAnalytics: true,             // Collapsible section toggle
 
-7. **Frontend Integration** (2-3 sessions)
-   - Add account selector dropdown
-   - Build connection management UI (connect/disconnect buttons)
-   - Display synced positions with visual distinction
-   - Add sync status indicator and manual refresh
+        // MODIFIED METHOD
+        async init() {
+            await this.loadStocks();
+            await this.updateDailySnapshot();   // NEW
+            await this.loadPortfolioHistory();  // NEW
+            this.loadBenchmarks();
+            this.startAutoRefresh();
+        },
 
-8. **Testing & Polish** (1-2 sessions)
-   - Test webhook failure scenarios
-   - Verify stale connection handling
-   - Load test with multiple accounts
-   - Add user-facing error messages
+        // NEW METHODS
+        async updateDailySnapshot() { /* ... */ },
+        async loadPortfolioHistory() { /* ... */ },
+        async loadSectorBreakdown() { /* ... */ },
+        async loadPortfolioReturns() { /* ... */ },
+        async loadConcentrationWarnings() { /* ... */ },
+    }
+}
+```
 
-**Dependencies:**
-- OAuth Flow depends on Database Schema + SDK Setup
-- Holdings Sync depends on OAuth Flow (needs connection_id)
-- Webhook Receiver depends on Holdings Sync (shares sync function)
-- Background Job depends on Holdings Sync
-- Frontend Integration depends on all backend components
+## SoFi Import Integration
+
+**Current status:** SoFi does not export positions CSV (verified 2026-02-11)
+**Alternative:** Transaction history CSV export available
+
+### SoFi Transaction CSV Format
+
+According to support documentation, SoFi provides:
+- Transaction history export via "Tax documents" → "Download Transaction History"
+- Date range limit: 2 years max per export
+- Format: CSV with transaction types (BUY, SELL, DIVIDEND, etc.)
+
+**Integration approach:**
+
+1. **Phase 1:** Document "SoFi not supported" in UI with explanation
+2. **Future:** If transaction reconstruction is desired, add parser:
+
+```php
+function parseSoFiTransactionCSV(string $csvContent): array {
+    // Parse transaction rows
+    // Group by symbol
+    // Calculate net shares (BUY - SELL)
+    // Calculate average cost basis
+    // Return holdings array
+
+    // NOTE: This is complex and error-prone
+    // Better to wait for SoFi to add positions export
+}
+```
+
+**Recommendation:** Add to UI:
+```html
+<div class="import-note">
+    <strong>SoFi users:</strong> SoFi does not yet provide a positions export.
+    You can manually enter your holdings or export from SoFi's tax documents
+    (transaction history reconstruction is not yet supported).
+</div>
+```
+
+## Build Order & Dependencies
+
+Recommended implementation sequence to minimize integration risk:
+
+### Phase 1: Foundation (Database + Snapshot Logic)
+1. Create `portfolio_snapshots` table migration
+2. Create `sector_cache` table migration
+3. Add `updateSnapshot` endpoint (daily snapshot creation)
+4. Add `backfillSnapshots` endpoint (historical backfill)
+5. Test: Verify snapshots are created correctly
+
+**Dependencies:** None (new tables, no existing code changes)
+
+### Phase 2: Historical Value Chart
+1. Add `portfolioHistory` endpoint (fetch snapshots)
+2. Add Alpine.js state for portfolio history
+3. Add UI section with Chart.js line chart
+4. Wire up init() to call updateSnapshot + loadHistory
+5. Test: Chart renders with historical data
+
+**Dependencies:** Phase 1 (needs snapshots table)
+
+### Phase 3: Time-Based Returns
+1. Add `portfolioReturns` endpoint (compute returns from snapshots)
+2. Add Alpine.js state for returns
+3. Add UI cards for 1D/1W/1M/YTD/All returns
+4. Test: Returns calculate correctly
+
+**Dependencies:** Phase 1 (needs snapshots table)
+
+### Phase 4: Sector Classification
+1. Add `fetchYahooProfile()` helper (quoteSummary API call)
+2. Add `sectorBreakdown` endpoint
+3. Add Alpine.js state for sector data
+4. Add Chart.js doughnut chart UI
+5. Test: Sector data fetches and caches
+
+**Dependencies:** None (independent feature)
+
+### Phase 5: Concentration Warnings
+1. Add `concentrationWarnings` endpoint
+2. Add Alpine.js state for warnings
+3. Add UI alert box for warnings
+4. Test: Warnings trigger at correct thresholds
+
+**Dependencies:** Phase 4 (needs sector breakdown)
+
+### Phase 6: Income Analytics Extension
+1. Extend existing `portfolioDividends` endpoint
+2. Add sector breakdown to dividend calculations
+3. Add UI for dividend by sector
+4. Test: Dividend projections accurate
+
+**Dependencies:** Phase 4 (needs sector data)
+
+## Anti-Patterns to Avoid
+
+### Anti-Pattern 1: Cron-Based Snapshot Generation
+
+**What people do:** Set up cron job to run daily snapshot script
+**Why it's wrong:** Violates Stockd's zero-dependency design. Requires server access, cron configuration, process management.
+**Do this instead:** Lazy snapshot generation on page load (Pattern 1 above)
+
+### Anti-Pattern 2: Real-Time Sector API Calls
+
+**What people do:** Fetch Yahoo quoteSummary on every portfolio load
+**Why it's wrong:** Slow (300-500ms per call), rate limiting, sectors rarely change
+**Do this instead:** Aggressive caching with 30-day TTL (Pattern 3 above)
+
+### Anti-Pattern 3: Storing Computed Metrics
+
+**What people do:** Create tables for returns, concentration, etc.
+**Why it's wrong:** Data goes stale, requires update logic, increases complexity
+**Do this instead:** Compute on-demand from source data (snapshots + current prices)
+
+### Anti-Pattern 4: Synchronous Backfill on First Load
+
+**What people do:** Block page render while backfilling 90 days of snapshots
+**Why it's wrong:** 5-10 second page load, terrible UX
+**Do this instead:**
+- Show chart with partial data immediately
+- Display "Backfilling..." progress indicator
+- Update chart as backfill completes in background
+- Or: Trigger backfill as background task after initial render
+
+### Anti-Pattern 5: Per-Stock Historical Tables
+
+**What people do:** Create `stock_history` table with daily prices per symbol
+**Why it's wrong:** Massive data duplication, storage waste, complex queries
+**Do this instead:** Store only portfolio-level snapshots. Fetch individual stock history from Yahoo on-demand (already implemented for charts).
+
+## Scaling Considerations
+
+| Scale | Expected Behavior | Optimization Strategy |
+|-------|-------------------|----------------------|
+| 1-20 stocks | Instant (<100ms) | No optimization needed |
+| 20-50 stocks | Acceptable (100-500ms) | Parallel API calls for sector enrichment |
+| 50-100 stocks | Slow (500ms-2s) | Sector enrichment on-demand (lazy load on chart expand) |
+| 100+ stocks | Very slow (2s+) | Backfill as background job, show progress, cache aggressively |
+
+**Stockd's typical user:** 10-30 stocks (based on CSV import patterns)
+**Optimization priority:** Medium (acceptable for target user base)
+
+### Optimization: Parallel Sector Fetching
+
+For portfolios >30 stocks, parallelize Yahoo API calls:
+
+```javascript
+async function enrichAllStocks(stocks) {
+    const batchSize = 5; // Max concurrent requests
+    const results = [];
+
+    for (let i = 0; i < stocks.length; i += batchSize) {
+        const batch = stocks.slice(i, i + batchSize);
+        const promises = batch.map(s => fetch(`api.php?action=enrichStock&symbol=${s.symbol}`));
+        const batchResults = await Promise.all(promises);
+        results.push(...batchResults);
+
+        // Rate limiting: 100ms delay between batches
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    return results;
+}
+```
 
 ## Sources
 
-- [SnapTrade API Documentation](https://docs.snaptrade.com/) - HIGH confidence
-- [SnapTrade Webhooks](https://docs.snaptrade.com/docs/webhooks) - HIGH confidence
-- [SnapTrade FAQ](https://docs.snaptrade.com/docs/faq) - HIGH confidence
-- [SnapTrade PHP SDK GitHub](https://github.com/passiv/snaptrade-php-sdk) - HIGH confidence
-- [SnapTrade Holdings Endpoint](https://docs.snaptrade.com/reference/Account%20Information/AccountInformation_getUserHoldings) - HIGH confidence
-- [Polling vs Webhooks](https://unified.to/blog/polling_vs_webhooks_when_to_use_one_over_the_other) - MEDIUM confidence
-- [OAuth 2.0 with Cloudflare Tunnel](https://medium.com/@bonfacealfonce/how-i-solved-the-google-oauth-callback-issue-in-n8n-docker-cloudflare-tunnel-a53c860073a8) - MEDIUM confidence
-- [PHP OAuth Integration Patterns 2026](https://zuniweb.com/blog/php-architecture-patterns-monoliths-microservices-and-serverless-considerations/) - MEDIUM confidence
-- [PHP Cron Job Scheduling 2026](https://packagist.org/packages/neuron-php/jobs) - MEDIUM confidence
-- [SQLite Schema Design](https://www.sqliteforum.com/p/effective-schema-design-for-sqlite) - MEDIUM confidence
+**Architecture Patterns:**
+- [SQLite History Tracking](https://simonwillison.net/2023/Apr/15/sqlite-history/) — Change tracking and snapshot patterns in SQLite
+- [Daily Snapshot Pattern](https://community.fabric.microsoft.com/t5/Dataflow/Saving-a-daily-copy-of-inventory-table-to-lakehouse/m-p/3877148) — Append-only daily snapshot strategy
+- [Lazy Loading Snapshots](https://engineering.cred.club/lazy-loading-of-snapshot-restores-and-its-implications-on-database-performance-d866097b02fa) — On-demand snapshot restoration patterns
+
+**Yahoo Finance API:**
+- [yahooquery Modules Documentation](https://yahooquery.dpguthrie.com/guide/ticker/modules/) — assetProfile and summaryProfile module fields (sector, industry, quoteType)
+- [Yahoo Finance API Guide](https://algotrading101.com/learn/yahoo-finance-api-guide/) — Unofficial API endpoints and quoteSummary usage
+- [yfinance Python Library](https://github.com/ranaroussi/yfinance) — Popular Yahoo Finance API wrapper (reference implementation)
+
+**Portfolio Backfill:**
+- [Portfolio Visualizer Backfill](https://support.kwanti.com/hc/en-us/articles/115000684588-Backfills) — Backfilling methodology using proxy assets
+- [DBT Snapshots Issue](https://github.com/dbt-labs/dbt-core/issues/9892) — Historical backfilling challenges in snapshot systems
+
+**SoFi Export:**
+- [SoFi Transaction Export](https://support.sofi.com/hc/en-us/articles/360040121231-How-do-I-view-download-statement-for-my-Invest-account-s) — Tax documents and transaction history download
+- [Export SoFi Trades](https://support.portseido.com/export-trades/sofi/) — Transaction history CSV export instructions
 
 ---
-*Architecture research for: Stockd - Brokerage Account Sync Integration*
-*Researched: 2026-02-09*
+*Architecture research for: Portfolio analytics integration into monolithic PHP/Alpine.js/SQLite app*
+*Researched: 2026-02-11*

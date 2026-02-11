@@ -1,203 +1,306 @@
 # Project Research Summary
 
-**Project:** Stockd Brokerage Sync
-**Domain:** Personal stock portfolio tracker with third-party brokerage account synchronization
-**Researched:** 2026-02-09
-**Confidence:** MEDIUM-HIGH
+**Project:** Stockd v1.2 - Analytics & SoFi Import
+**Domain:** Personal portfolio tracking with analytics and broker integration
+**Researched:** 2026-02-11
+**Confidence:** HIGH
 
 ## Executive Summary
 
-Stockd is a PHP/Alpine.js personal portfolio tracker adding brokerage account synchronization via the SnapTrade PHP SDK for Fidelity, Schwab, and SoFi accounts. The integration pattern is well-documented: install the official SDK via Composer (a new dependency for this project), implement OAuth connection flows through an existing Cloudflare Tunnel for HTTPS, cache synced holdings in SQLite, and display them alongside existing manual entries. This is a proven pattern used by portfolio trackers like Empower, Kubera, and Sharesight -- the SnapTrade SDK handles the hardest parts (HMAC signing, token lifecycle, brokerage proxying) so the implementation focuses on data flow and UI rather than authentication plumbing.
+Portfolio analytics features integrate cleanly into Stockd's existing monolithic PHP/Alpine.js/SQLite architecture. The recommended approach uses **lazy snapshot generation on page load** (no cron jobs), aggressive caching of sector metadata (Yahoo Finance is unofficial and rate-limited), and on-demand return calculations from stored snapshots. This preserves Stockd's zero-dependency design while enabling historical tracking, time-based returns, sector breakdown, and concentration warnings.
 
-The recommended approach is a "stale-first with background refresh" architecture: show cached holdings immediately on page load, trigger a background sync, and update the UI when fresh data arrives. This avoids the single biggest pitfall identified in research -- synchronous sync-on-page-load causing 10-30 second hangs. The project must introduce Composer (currently has no package manager), add 3 new SQLite tables (connections, positions, sync_log), and extend the existing stocks table with sync source tracking. The OAuth flow relies on the already-configured Cloudflare Tunnel, but the redirect URI must be configured precisely (exact protocol, domain, path match) or the entire flow fails silently.
+**Key architectural insight:** Store daily portfolio-level snapshots in SQLite (not per-stock history), fetch sector data once and cache for 30 days, compute analytics on-demand from snapshots + current prices. This minimizes Yahoo Finance API calls (critical - unofficial API has tight rate limits), keeps database size manageable (<50MB for first year), and maintains sub-second page loads for portfolios up to 30 stocks.
 
-The top risks are: (1) no authentication on a publicly tunneled app that will store real financial credentials -- this must be addressed before any SnapTrade integration; (2) symbol instability between SnapTrade (returns exchange suffixes like `AAPL.O`) and the existing Yahoo Finance-based symbols (`AAPL`) causing duplicate positions; and (3) null cost basis from brokerages breaking gain/loss calculations. All three have clear mitigation strategies identified in research. The overall integration is achievable in a focused build sequence of 5-6 phases, with the critical path running through security, OAuth, holdings sync, and frontend integration.
+**Primary risk:** Yahoo Finance rate limiting and data structure changes. The API is unofficial/undocumented and breaks when Yahoo updates their frontend. Mitigation: implement 500ms-1s delays between requests, defensive parsing with multiple fallback locations for sector data, aggressive caching, and fallback to static sector mappings. **SoFi import is not viable** - SoFi does not provide investment portfolio CSV export (only transaction history), so remove from v1.2 scope or pivot to manual entry helper.
 
 ## Key Findings
 
 ### Recommended Stack
 
-The SnapTrade PHP SDK (`konfig/snaptrade-php-sdk@^2.0.160`) is the only viable approach -- manual HMAC-SHA256 signing is explicitly discouraged by SnapTrade's own documentation. This SDK requires Composer, which Stockd does not currently use. Introducing Composer is a one-time cost that also opens the door to testing frameworks and code quality tools later.
+**No new dependencies required.** All analytics features work within existing PHP 8.1+, Alpine.js 3.x, SQLite 3.x, and Chart.js 4.x stack. Optionally add `league/csv` (^9.28.0) only if SoFi format proves complex, but native PHP `str_getcsv()` is sufficient for most broker exports.
 
 **Core technologies:**
-- **SnapTrade PHP SDK (2.0.160+):** Brokerage API client -- handles HMAC signatures, typed models, token lifecycle
-- **Composer 2.x:** Package manager -- required by SDK, no workaround exists
-- **Guzzle HTTP 7.x:** HTTP client -- auto-installed as SDK dependency
-- **vlucas/phpdotenv 5.x:** Credential management -- keeps API keys out of codebase
-- **SQLite with WAL mode:** Data storage -- extend existing DB with 3 new tables, enable WAL for concurrent access during sync
+- **PHP 8.1+ (8.4.17 in use):** Backend API — all analytics calculations in native PHP, no external libraries needed
+- **SQLite 3.x with WAL mode:** Database — excellent for time-series snapshots with proper indexing, already configured correctly
+- **Yahoo Finance API (unofficial):** Data source — provides historical prices, sector/industry data, quote types via quoteSummary module (free, no API key)
+- **Alpine.js 3.15.8:** Frontend reactivity — manage analytics state and chart rendering, existing pattern
+- **Chart.js 4.x:** Charting — line chart for historical value, doughnut chart for sector allocation, already in use
 
-**Critical version requirement:** PHP 8.0+ (Stockd runs 8.2, which is compatible). Do NOT use the `konfig/snaptrade-php-7-sdk` variant.
+**What NOT to add:**
+- scheb/yahoo-finance-api (unnecessary abstraction, doesn't provide sector data)
+- PHP time-series libraries (overkill, native DateTime sufficient)
+- Sector classification APIs (Alpha Vantage, FMP require API keys, Yahoo Finance is free and proven)
 
 ### Expected Features
 
-**Must have (table stakes -- P1):**
-- OAuth connection to Fidelity, Schwab, SoFi via SnapTrade
-- Auto-sync holdings with stale-first display pattern
-- Multiple account support (sub-accounts shown separately)
-- Unrealized gain/loss per position (with null cost basis handling)
-- Manual cost basis entry when broker data is missing
-- Manual refresh button with rate limiting
-- Sync status indicator ("last synced" timestamp)
-- Connection management (add/disconnect brokerages)
-- Auto-remove sold positions (filter `quantity > 0`)
-- Basic error handling with user-friendly messages
+**Must have (table stakes):**
+- Historical portfolio value chart — #1 expected feature, backfill from current holdings using historical prices
+- Total return percentage — simple arithmetic from existing cost basis and current value
+- Time-based returns (1W, 1M, YTD, since inception) — calculate on-demand from portfolio snapshots
+- Sector breakdown allocation — Yahoo Finance provides sector, display as doughnut chart
+- Per-stock performance ranking — sort by existing gain/loss % field
+- Dividend income projections — sum annual_dividend × shares across portfolio
 
-**Should have (differentiators -- P2):**
-- Transaction history display from broker order data
-- Dividend tracking from transaction data
-- Realized gain/loss reporting for tax planning
-- Account type labels (401k, IRA, Roth, taxable)
-- OAuth token reauthorization flow (tokens expire in 30-90 days)
+**Should have (competitive advantage):**
+- Concentration warnings — proactive risk alerts using HHI + position/sector thresholds (>20% single stock, >40% single sector)
+- Asset class breakdown — distinguish stocks vs ETFs vs bonds using Yahoo Finance quoteType
+- Income by sector — cross-tab of dividends × sectors, shows income concentration
 
 **Defer (v2+):**
-- Performance metrics (TWR/MWR) -- requires historical snapshots infrastructure
-- Cost basis method selection (FIFO/LIFO) -- high complexity, niche audience
-- Webhook-based automatic background sync -- webhooks disabled by default in SnapTrade
-- Historical portfolio snapshots -- requires time-series storage design
+- Time-weighted return (TWR) — requires daily snapshots infrastructure not yet built, use simple money-weighted return for v1.2
+- Daily auto-snapshots — requires cron/daemon, use lazy generation on page load instead
+- Annualized returns (CAGR) — nice-to-have, defer to v1.3
+- Transaction history import — broker CSVs vary wildly, reconstructing positions is fragile
+- Tax lot tracking — brokers don't provide lot-level data in position snapshots
+
+**SoFi import status:** **NOT VIABLE.** SoFi does not provide investment portfolio CSV export, only transaction history. Remove from v1.2 or pivot to manual entry helper.
 
 ### Architecture Approach
 
-The architecture preserves Stockd's monolithic PHP structure: api.php extends with new endpoints (connectBrokerage, brokerageCallback, syncHoldings, listConnections, disconnectBrokerage), a new webhook.php handles SnapTrade event verification, and an optional cron.php provides fallback polling for stale connections. The frontend adds Alpine.js components for account selection, connection management, and sync status. A shared `syncHoldings()` function is extracted for use by the callback handler, webhook receiver, cron job, and manual refresh endpoint.
+**Monolithic with targeted additions.** Add 2 new database tables (`portfolio_snapshots` for daily values, `sector_cache` for Yahoo Finance metadata), 5 new API endpoints (portfolioHistory, portfolioReturns, sectorBreakdown, concentrationWarnings, enrichStock), and 1 new Alpine.js analytics dashboard component (~400 lines). Total addition: ~700 lines to existing 4,100-line codebase.
 
 **Major components:**
-1. **OAuth Handler** -- initiates SnapTrade Connection Portal, processes callback, stores connection metadata
-2. **Holdings Sync Engine** -- fetches positions/balances from SnapTrade API, transforms to local schema, upserts to SQLite with transactions
-3. **Connection Manager** -- CRUD for brokerage connections, status monitoring, reauthorization flow
-4. **Webhook Receiver** -- separate endpoint (webhook.php) with HMAC signature verification, handles ACCOUNT_HOLDINGS_UPDATED and CONNECTION_BROKEN events
-5. **Account Selector UI** -- Alpine.js component filtering between manual entries and synced accounts, merged portfolio view
+1. **Snapshot Generator** — creates daily portfolio value snapshot on page load if today's snapshot missing, backfills last 90 days on first load using Yahoo historical prices
+2. **Sector Enrichment Service** — lazy-loads sector/industry/quoteType from Yahoo quoteSummary, caches in SQLite for 30 days (sectors rarely change)
+3. **Analytics Aggregator** — computes time-based returns, sector allocations, concentration warnings on-demand from snapshots + current prices (no pre-computation/storage)
+4. **Chart Renderer** — Alpine.js component consumes analytics endpoints, renders Chart.js line chart (historical value) and doughnut chart (sector allocation)
 
-**Key schema additions:**
-- `connections` table: user_id, user_secret, connection_id, institution_name, status, last_sync_at
-- `positions` table: connection_id, account_id, symbol, shares, avg_price, synced_at (unique on connection+account+symbol)
-- `sync_log` table: event_type, connection_id, status, message, timestamp
-- `stocks` table extension: is_synced flag, connection_id, account_id columns
+**Critical architectural decision:** Use **lazy snapshot generation** (check on page load, create if missing) instead of cron jobs. Preserves zero-dependency design. If user doesn't visit for days, snapshots have gaps (acceptable). Backfill can fill gaps using Yahoo historical prices.
 
 ### Critical Pitfalls
 
-1. **No authentication on public tunnel** -- Cloudflare Tunnel makes localhost publicly accessible. Adding SnapTrade means storing real OAuth tokens for financial accounts. Add authentication (minimum: HTTP Basic Auth with env-var password, better: Cloudflare Access policy) BEFORE any SnapTrade integration. This is Phase 0 -- non-negotiable.
+1. **Yahoo Finance bulk historical data rate limiting** — unofficial API blocks IPs after 100-200 rapid requests. When fetching 5-year data for 30 stocks, 429 errors break charts. **Mitigation:** 500ms-1s delays between requests, cache aggressively, batch fetches (5 stocks, sleep 2s, next 5), exponential backoff on 429 errors.
 
-2. **Sync-on-page-load timeout** -- SnapTrade proxies to real brokerages with variable response times (5-30 seconds). Never block page render on API calls. Show cached data immediately, sync in background, update UI async. Set 5-second timeout on all SnapTrade API calls.
+2. **Time-weighted vs simple return calculation confusion** — simple "ending - starting value" is wrong when deposits/withdrawals occur mid-period. Shows +120% when true return is +10%. **Mitigation:** For v1.2, use simple money-weighted return (gain/loss %) and label clearly. Defer TWR to v1.3+ when daily snapshots exist. Document why return differs from broker statements.
 
-3. **Symbol instability causing duplicates** -- SnapTrade returns symbols with exchange suffixes (`AAPL.O`) while existing Yahoo Finance data uses clean symbols (`AAPL`). Use SnapTrade's `security_id` or `cusip` as reconciliation key, not the symbol string. Normalize symbols by stripping exchange suffixes before storage.
+3. **Sector data freshness and availability** — Yahoo Finance returns null sectors for 20-30% of stocks, ETFs have meaningless sector classifications. **Mitigation:** Defensive parsing with fallback locations, cache for 30 days, allow manual override, exclude ETFs from sector breakdown or use "ETF/Fund" category.
 
-4. **Null cost basis breaking gain/loss math** -- Brokerages frequently return null for `average_purchase_price` on transferred or older positions. Check for null before calculating, show "manual entry required" prompt, track cost basis source (manual vs brokerage).
+4. **SQLite performance degradation with growing snapshots** — table grows to 100K+ rows after 1 year (30 stocks × 365 days), queries slow to 3-5 seconds without indexes. **Mitigation:** Index on `(snapshot_date DESC)`, use date range queries (`WHERE snapshot_date >= date('now', '-1 year')`), archive snapshots >2 years old to separate table.
 
-5. **SQLite write locks during sync** -- Batch upserts without transactions + concurrent page reads = "database is locked" errors. Enable WAL mode and set `busy_timeout=5000` as the very first database configuration step. Wrap all sync operations in `BEGIN EXCLUSIVE...COMMIT`.
+5. **Monolithic file complexity explosion** — `api.php` grows from 4,100 to 8,000+ lines after analytics. **Mitigation:** **NOW is the time to refactor** before adding analytics. Extract endpoints to separate files (`api/analytics.php`, `api/quotes.php`), use routing pattern, shared utilities in `lib/` folder.
 
 ## Implications for Roadmap
 
-Based on combined research, the build should follow this sequence. Dependencies are strict -- each phase depends on the one before it.
+Based on research, suggested 6-phase structure:
 
-### Phase 0: Security Foundation
-**Rationale:** Pitfall #10 (no authentication) is a "stop everything" issue. Storing SnapTrade OAuth tokens on a publicly accessible Cloudflare Tunnel without authentication is unacceptable. This must come first.
-**Delivers:** Authentication gate on all routes, encrypted credential storage pattern, Cloudflare Access policy or HTTP Basic Auth
-**Addresses:** Connection management security, credential protection
-**Avoids:** Pitfall #10 (multi-brokerage data leak), plaintext token storage
+### Phase 0: Pre-Analytics Refactoring
+**Rationale:** Current codebase at 4,100 lines is tipping point where refactoring pays off. Adding 2,000+ lines of analytics without refactoring creates 8,000-line monolith (unmaintainable). Extract existing endpoints to modules BEFORE adding analytics to prevent complexity explosion.
 
-### Phase 1: SDK Setup and Database Foundation
-**Rationale:** Composer and schema are prerequisites for everything else. Research shows Composer is a new dependency for Stockd and the migration path is straightforward (5 steps). Database schema must include WAL mode from day one to prevent lock issues.
-**Delivers:** Composer installed with SnapTrade SDK, 3 new tables created, WAL mode enabled, basic SDK connectivity verified (registerSnapTradeUser test call)
-**Addresses:** Core stack setup, database concurrency
-**Avoids:** Pitfall #5 (SQLite write locks), Pitfall #4 (rate limiting from aggressive sync)
+**Delivers:**
+- Modular API structure (`api/quotes.php`, `api/dividends.php`, `api/import.php`)
+- Shared utilities (`lib/yahoo.php`, `lib/database.php`)
+- `api.php` as router (<500 lines)
 
-### Phase 2: OAuth Connection Flow
-**Rationale:** OAuth is the gateway to all sync functionality. Architecture research provides exact code patterns for the Connection Portal URL flow. The Cloudflare Tunnel already exists but the redirect URI must be configured precisely.
-**Delivers:** "Connect Brokerage" button, OAuth redirect through SnapTrade Connection Portal, callback handler storing connection_id, successful end-to-end connection with at least one brokerage
-**Addresses:** Connection management (add), OAuth flow, SnapTrade user registration
-**Avoids:** Pitfall #2 (OAuth redirect URI mismatch), Anti-pattern #2 (storing tokens instead of using SnapTrade user management)
+**Avoids:** Pitfall #5 (monolithic file complexity explosion)
 
-### Phase 3: Holdings Sync and Display
-**Rationale:** This is the core value delivery -- "see all my stocks in one place without manual entry." Architecture research provides the syncHoldings() function pattern with upsert logic. Symbol normalization must be built into the sync from the start.
-**Delivers:** Synced holdings displayed alongside manual entries, account selector dropdown, symbol normalization (strip exchange suffixes), null cost basis detection with manual entry prompt, auto-removal of sold positions (filter quantity > 0), sync status indicator
-**Addresses:** Holdings display, multiple account support, unrealized gain/loss, manual cost basis entry, sync status, auto-remove sold positions
-**Avoids:** Pitfall #3 (symbol instability), Pitfall #6 (missing cost basis), Pitfall #7 (sold positions reappearing), Anti-pattern #3 (treating synced positions as editable)
+**Research flag:** Standard refactoring patterns, skip `/gsd:research-phase`
 
-### Phase 4: Refresh, Error Handling, and Connection Management
-**Rationale:** Once sync works, users need control over it. Manual refresh, disconnect flows, and error recovery complete the MVP feature set. Research identifies specific error types (429 rate limit, OAuth expired, broker unavailable) that need distinct handling.
-**Delivers:** Manual refresh button with cooldown, disconnect brokerage flow, error handling with specific messages per failure type, exponential backoff on 429s, stale data warnings (>48 hours), connection status display (active/broken)
-**Addresses:** Manual refresh, connection management (disconnect), basic error handling, sync error recovery
-**Avoids:** Pitfall #1 (sync timeout via async refresh), Pitfall #9 (connection status drift), Pitfall #8 (silent data staleness)
+---
 
-### Phase 5: Webhook Integration and Background Sync
-**Rationale:** Webhooks are deferred to after MVP because SnapTrade disables them by default (requires contacting SnapTrade to enable). The polling + manual refresh from Phase 4 is sufficient for launch. This phase adds event-driven freshness.
-**Delivers:** webhook.php with HMAC signature verification, ACCOUNT_HOLDINGS_UPDATED handler triggering immediate sync, CONNECTION_BROKEN handler updating status, cron.php fallback for stale connections (6-hour interval), webhook health monitoring
-**Addresses:** Webhook-based updates, background sync, stale connection detection
-**Avoids:** Pitfall #8 (webhook failure silent staleness), Anti-pattern #4 (processing all webhook types equally)
+### Phase 1: Foundation - Snapshots & Data Schema
+**Rationale:** Analytics features depend on daily portfolio snapshots and sector metadata. Build database tables and snapshot generation logic first. This is the foundation for all other analytics features.
 
-### Phase 6: Post-MVP Enhancements (v1.x)
-**Rationale:** These features enhance the core but are not required for validating brokerage sync value. Add based on user feedback.
-**Delivers:** Transaction history display, dividend tracking, realized gain/loss reporting, account type labels, OAuth reauthorization flow
-**Addresses:** P2 features from feature research
-**Avoids:** Scope creep into P3 features (performance metrics, cost basis methods)
+**Delivers:**
+- `portfolio_snapshots` table with proper indexes (`snapshot_date DESC`)
+- `sector_cache` table for Yahoo Finance metadata
+- `updateSnapshot` endpoint (lazy generation on page load)
+- `backfillSnapshots` endpoint (historical data population)
+- Rate limiting infrastructure (500ms-1s delays between Yahoo Finance requests)
+
+**Addresses:** Historical value chart foundation (table stakes), sector breakdown foundation (table stakes)
+
+**Avoids:** Pitfall #1 (Yahoo Finance rate limiting), Pitfall #4 (SQLite performance degradation)
+
+**Research flag:** Standard snapshot patterns, but **needs validation** of Yahoo Finance rate limit thresholds (test with 30-stock portfolio)
+
+---
+
+### Phase 2: Historical Value Tracking
+**Rationale:** #1 expected feature across all portfolio trackers. Depends on Phase 1 snapshots. Delivers immediate user value (users want to see wealth trend over time).
+
+**Delivers:**
+- `portfolioHistory` endpoint (fetch snapshots for chart)
+- Alpine.js state for portfolio history
+- Chart.js line chart UI component
+- Backfill mechanism for new users (last 90 days using Yahoo historical prices)
+
+**Addresses:** Historical portfolio value chart (table stakes), time-based returns foundation
+
+**Uses:** SQLite snapshots table, Yahoo Finance historical prices API
+
+**Implements:** Chart Renderer component (Architecture)
+
+**Avoids:** Pitfall #9 (historical backfill expectations — set clear "tracking since [date]" messaging)
+
+**Research flag:** Standard Chart.js patterns, skip `/gsd:research-phase`
+
+---
+
+### Phase 3: Return Calculations & Metrics
+**Rationale:** Users expect to see performance metrics once historical chart exists. Simple calculations from existing snapshots + current value. Low complexity, high user value.
+
+**Delivers:**
+- `portfolioReturns` endpoint (compute 1D, 1W, 1M, YTD, all-time returns)
+- Alpine.js state for returns
+- Return metric cards in UI (gain $, gain %, color-coded positive/negative)
+- Per-stock performance ranking (sort by existing gain/loss %)
+
+**Addresses:** Total return percentage (table stakes), time-based returns (table stakes), per-stock performance ranking (table stakes)
+
+**Avoids:** Pitfall #2 (return calculation confusion — use simple money-weighted return, label clearly, document why differs from broker)
+
+**Research flag:** Skip `/gsd:research-phase` — math is standard, but include edge case testing in phase plan
+
+---
+
+### Phase 4: Sector Classification & Allocation
+**Rationale:** Third most common feature after value chart and returns. Yahoo Finance provides sector data via quoteSummary API. Independent of other analytics features (can develop in parallel with Phase 3).
+
+**Delivers:**
+- `fetchYahooProfile()` helper (quoteSummary API with defensive parsing)
+- `sectorBreakdown` endpoint with caching
+- Alpine.js state for sector data
+- Chart.js doughnut chart for sector allocation
+- Asset class breakdown (stocks, ETFs, bonds, cash)
+
+**Addresses:** Sector breakdown view (table stakes), asset class breakdown (differentiator)
+
+**Uses:** Yahoo Finance quoteSummary assetProfile module, SQLite sector_cache
+
+**Implements:** Sector Enrichment Service (Architecture)
+
+**Avoids:** Pitfall #3 (sector data availability — defensive parsing, manual override, cache for 30 days), Pitfall #10 (Yahoo API structure changes — multiple fallback locations)
+
+**Research flag:** **NEEDS DEEPER RESEARCH** — verify Yahoo quoteSummary response format stability, test with 100 random stocks to assess null sector rate
+
+---
+
+### Phase 5: Risk Analysis & Warnings
+**Rationale:** Proactive concentration warnings differentiate Stockd from basic trackers. Depends on Phase 4 sector data. Computes HHI and threshold checks from current portfolio (no new data sources).
+
+**Delivers:**
+- `concentrationWarnings` endpoint (HHI calculation + thresholds)
+- Alpine.js state for warnings
+- Warning alert box UI with actionable suggestions
+- Dividend income projections (sum existing dividend data)
+- Income by sector (cross-tab dividends × sectors from Phase 4)
+
+**Addresses:** Concentration warnings (differentiator), dividend income projection (table stakes), income by sector (differentiator)
+
+**Avoids:** Pitfall #8 (concentration threshold sensitivity — use tiered thresholds: >25% high, >15% medium, >10% info; adjust for small portfolios <5 stocks), Pitfall #7 (dividend projection errors — distinguish confirmed vs estimated)
+
+**Research flag:** Skip `/gsd:research-phase` — HHI calculation is standard, but phase plan should include threshold validation with test portfolios
+
+---
+
+### Phase 6: Polish & Edge Cases
+**Rationale:** Address edge cases discovered in research, improve UX, prepare for launch.
+
+**Delivers:**
+- Loading states and progress indicators (historical backfill, sector enrichment)
+- Error handling and fallback messaging (Yahoo Finance API failures)
+- Date range selectors for charts (1M, 3M, 6M, 1Y, All)
+- Benchmark comparisons (portfolio return vs S&P 500)
+- Tooltips and documentation (explain return calculations, sector classifications)
+
+**Addresses:** UX pitfalls from research (loading states, null sector handling, return calculation explanations)
+
+**Avoids:** All pitfalls indirectly by improving error handling and user guidance
+
+**Research flag:** Standard UX patterns, skip `/gsd:research-phase`
+
+---
 
 ### Phase Ordering Rationale
 
-- **Security before integration:** Research unanimously identifies authentication as Phase 0. Storing financial credentials on an unauthenticated public endpoint is the highest-severity risk identified.
-- **Schema before OAuth:** The connections table must exist before the OAuth callback can store connection_id. WAL mode must be enabled before any sync writes.
-- **OAuth before sync:** You cannot fetch holdings without a connection_id from a completed OAuth flow.
-- **Sync before refresh/errors:** Error handling wraps sync operations that must exist first.
-- **Webhooks after MVP:** SnapTrade webhooks are disabled by default and require manual activation. Polling + manual refresh is sufficient for a personal tracker launch.
-- **Features grouped by dependency chain:** The architecture dependency graph (OAuth -> Sync -> Display -> Refresh) maps directly to phases 2-4.
+**Why this order:**
+- Phase 0 (refactoring) prevents technical debt before complexity grows
+- Phase 1 (snapshots) is foundation for all other features — must come first
+- Phase 2 (historical chart) delivers immediate high-value feature, validates snapshot infrastructure
+- Phase 3 (returns) and Phase 4 (sectors) are independent, can develop in parallel after Phase 2
+- Phase 5 (risk analysis) depends on Phase 4 sector data
+- Phase 6 (polish) addresses edge cases discovered during Phases 2-5
+
+**Why this grouping:**
+- Database schema changes isolated to Phase 1 (minimize migration risk)
+- Yahoo Finance integration spread across Phases 2-4 (incremental API learning)
+- Chart.js UI work concentrated in Phases 2, 4 (consistent pattern application)
+- Complex calculations (returns, HHI) isolated to Phases 3, 5 (focused testing)
+
+**How this avoids pitfalls:**
+- Rate limiting infrastructure built in Phase 1 before bulk historical fetches in Phase 2
+- Monolithic file refactoring done in Phase 0 before adding 2,000+ lines
+- Sector data caching designed in Phase 4 to handle null/stale data before concentration analysis in Phase 5
+- SQLite indexes included in Phase 1 schema design (not retrofitted)
 
 ### Research Flags
 
-Phases likely needing deeper research during planning:
-- **Phase 2 (OAuth):** SnapTrade Connection Portal has specific iframe/popup behavior that needs testing. Cloudflare Tunnel redirect configuration is exact-match sensitive. Research the portal URL generation with sandbox credentials before implementation.
-- **Phase 3 (Holdings Sync):** Symbol normalization rules need validation against real SnapTrade responses from Fidelity/Schwab/SoFi. Cost basis availability varies by brokerage -- test with real accounts to confirm which fields are null.
-- **Phase 5 (Webhooks):** Requires contacting SnapTrade to enable webhooks. HMAC verification uses `consumerKey` (not deprecated webhook secret). Retry behavior (30min, exponential, 3 attempts) needs validation.
+**Phases needing deeper research during planning:**
 
-Phases with standard patterns (skip research-phase):
-- **Phase 0 (Security):** HTTP Basic Auth and Cloudflare Access are well-documented, standard patterns.
-- **Phase 1 (SDK Setup):** Composer installation and SQLite schema creation are routine operations with clear documentation.
-- **Phase 4 (Error Handling):** Exponential backoff, rate limiting, and connection status patterns are generic and well-established.
+- **Phase 1 (Foundation):** Yahoo Finance rate limit testing needed — verify 500ms delay is sufficient for 30-stock portfolio, test exponential backoff on 429 errors
+- **Phase 4 (Sector Classification):** Verify Yahoo quoteSummary response format — test with 100 random stocks to measure null sector rate, confirm assetProfile module stability
+
+**Phases with standard patterns (skip research-phase):**
+
+- **Phase 0 (Refactoring):** Well-documented PHP refactoring patterns (Strangler Fig, service extraction)
+- **Phase 2 (Historical Chart):** Standard Chart.js line chart implementation
+- **Phase 3 (Returns):** Standard financial calculations, edge case testing sufficient
+- **Phase 5 (Risk Analysis):** HHI calculation is standard, threshold validation with test portfolios sufficient
+- **Phase 6 (Polish):** Standard UX patterns
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All recommendations verified via official SnapTrade SDK docs, Packagist, and Composer documentation. SDK version 2.0.160 confirmed current as of Feb 6, 2026. |
-| Features | MEDIUM | Feature landscape well-mapped from SnapTrade API docs and competitor analysis. Uncertainty around cost basis availability and dividend data from specific brokerages (Fidelity, Schwab, SoFi). |
-| Architecture | HIGH | Architecture patterns drawn from official SnapTrade examples, webhook docs, and established PHP integration patterns. Code examples provided are directly applicable. |
-| Pitfalls | MEDIUM | Critical pitfalls verified against SnapTrade FAQ and official docs (symbol instability, rate limits, webhook behavior). Some pitfalls (token expiry timing, exact error responses) need validation during implementation. |
+| Stack | HIGH | All technologies already in use, no new dependencies, PHP native math sufficient for return calculations |
+| Features | HIGH | Feature landscape verified via competitor analysis (Portfolio Visualizer, Ghostfolio, Simply Wall St), table stakes vs differentiators clearly identified |
+| Architecture | HIGH | Monolithic architecture preserved, lazy snapshot generation pattern validated via SQLite community sources, Chart.js integration follows existing pattern |
+| Pitfalls | MEDIUM-HIGH | Yahoo Finance rate limits and data structure changes are known issues (verified via community sources), but exact thresholds require testing; SoFi export limitations confirmed |
 
-**Overall confidence:** MEDIUM-HIGH
-
-The integration path is clear and well-documented. The main unknowns are brokerage-specific behaviors (which fields Fidelity/Schwab/SoFi actually return) that can only be resolved by testing with real accounts.
+**Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **Cost basis availability per brokerage:** Research confirms cost basis is often null but does not specify which of Fidelity, Schwab, and SoFi provide it. Must test with real accounts during Phase 3 implementation.
-- **SnapTrade API rate limits:** Exact rate limit thresholds are not published in SnapTrade docs. The FAQ warns against aggressive sync but does not specify requests-per-second limits. Implement conservative backoff and monitor during development.
-- **Dividend data in SnapTrade API:** Unclear whether transaction history includes dividend payments. Need to verify during Phase 6 (v1.x) by inspecting actual API responses from connected accounts.
-- **OAuth token expiry timeline:** Research says 30-90 days depending on broker but exact timelines per brokerage are unknown. Build reauthorization flow proactively in Phase 6 rather than waiting for first expiry.
-- **SnapTrade Connection Portal UX:** Whether the portal opens as iframe, popup, or redirect is not fully documented. Test all modes during Phase 2 to determine best UX for Stockd's single-page layout.
-- **Existing Stockd authentication state:** Research assumes no auth exists. If any auth mechanism is already in place, Phase 0 scope changes significantly. Verify current state before planning.
+**Yahoo Finance rate limit thresholds:**
+- Research shows rate limiting occurs after 100-200 rapid requests, but exact threshold varies by IP, time of day, and request pattern
+- **Action:** Test with real 30-stock portfolio during Phase 1, measure 429 error threshold, adjust delays accordingly
+- **Risk:** Underestimating delay needs could cause IP bans in production
+
+**Sector data null rate:**
+- Research indicates 20-30% of stocks may have null sectors, but percentage varies by stock universe (large-cap vs small-cap vs international)
+- **Action:** Test with 100 random stocks from user's typical portfolio composition during Phase 4, measure null rate, adjust UI expectations
+- **Risk:** Large "Unknown" sector slice dominates charts if null rate is higher than expected
+
+**SoFi import capability:**
+- Research confirms SoFi does NOT provide investment portfolio CSV export, only transaction history
+- **Action:** Remove from v1.2 scope OR pivot to manual entry helper OR explore read-only API integration (requires OAuth, higher complexity)
+- **Risk:** User disappointment if "SoFi import" is advertised but not delivered
+
+**Return calculation validation:**
+- Research confirms time-weighted return (TWR) requires daily snapshots or transaction logging, money-weighted return (MWR) is simpler but less accurate with cash flows
+- **Action:** For v1.2, use simple money-weighted return (gain/loss %), label clearly, defer TWR to v1.3+ when daily snapshots infrastructure exists
+- **Risk:** User confusion when return differs from broker statement (broker uses TWR, Stockd uses MWR)
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- [SnapTrade PHP SDK GitHub](https://github.com/passiv/snaptrade-php-sdk) -- Installation, API reference, version compatibility
-- [SnapTrade PHP SDK on Packagist](https://packagist.org/packages/konfig/snaptrade-php-sdk) -- Version 2.0.160, dependencies
-- [SnapTrade Official Documentation](https://docs.snaptrade.com/) -- Authentication, webhooks, holdings API, FAQ
-- [SnapTrade API Requests](https://docs.snaptrade.com/docs/requests) -- Signature generation, authentication flow
-- [SnapTrade Webhooks](https://docs.snaptrade.com/docs/webhooks) -- Event types, retry logic, HMAC verification
-- [SnapTrade Launch Guide](https://docs.snaptrade.com/docs/launch-guide) -- Pre-launch requirements, rate limits
-- [SnapTrade FAQ](https://docs.snaptrade.com/docs/faq) -- Symbol stability warnings, sync behavior
-- [SQLite Locking Documentation](https://sqlite.org/lockingv3.html) -- WAL mode, concurrency behavior
-- [Composer Documentation](https://getcomposer.org/doc/01-basic-usage.md) -- Installation and usage
+- **STACK.md** — technology recommendations, Yahoo Finance API integration patterns, SQLite schema design
+- **FEATURES.md** — feature landscape analysis, competitor benchmarks, MVP definition
+- **ARCHITECTURE.md** — monolithic integration patterns, lazy snapshot generation, Alpine.js state management
+- **PITFALLS.md** — Yahoo Finance rate limiting, return calculation errors, sector data availability, SQLite performance, monolithic complexity
 
-### Secondary (MEDIUM confidence)
-- [Competitor analysis sources](https://www.wallstreetzen.com/blog/best-stock-portfolio-tracker/) -- Feature landscape comparison (Empower, Kubera, Sharesight)
-- [OAuth redirect patterns with Cloudflare Tunnel](https://medium.com/@bonfacealfonce/how-i-solved-the-google-oauth-callback-issue-in-n8n-docker-cloudflare-tunnel-a53c860073a8) -- Redirect URI configuration
-- [SQLite concurrent writes](https://tenthousandmeters.com/blog/sqlite-concurrent-writes-and-database-is-locked-errors/) -- WAL mode solutions
-- [vlucas/phpdotenv](https://github.com/vlucas/phpdotenv) -- Environment variable management
-- [Polling vs Webhooks patterns](https://unified.to/blog/polling_vs_webhooks_when_to_use_one_over_the_other) -- Sync architecture tradeoffs
+### Secondary (MEDIUM confidence, aggregated from research files)
+- [Yahoo Finance API Guide](https://algotrading101.com/learn/yahoo-finance-api-guide/) — quoteSummary usage, unofficial API patterns
+- [SQLite Time Series Best Practices](https://moldstud.com/articles/p-handling-time-series-data-in-sqlite-best-practices) — snapshot storage, indexing, date functions
+- [Portfolio Return Calculations Guide](https://portfoliooptimizer.io/blog/the-mathematics-of-portfolio-return-simple-return-money-weighted-return-and-time-weighted-return/) — TWR vs MWR calculation methods
+- [Why yfinance Keeps Getting Blocked](https://medium.com/@trading.dude/why-yfinance-keeps-getting-blocked-and-what-to-use-instead-92d84bb2cc01) — Rate limiting issues, 2024 changes
+- [SoFi Support: Can I Export My SoFi Money Transactions?](https://support.sofi.com/hc/en-us/articles/12905841091597-Can-I-export-my-SoFi-Money-transactions) — Transaction export only, no investment CSV
+- [Financial Samurai: Portfolio Concentration Risk Analysis](https://www.financialsamurai.com/how-to-analyze-investment-portfolio-for-concentration-risk-sector-exposure-style/) — HHI thresholds, concentration metrics
 
-### Tertiary (LOW confidence)
-- Exact rate limit thresholds for SnapTrade API -- not documented, inferred from FAQ warnings
-- Cost basis availability per brokerage -- inferred from general API limitations, not brokerage-specific
-- OAuth token expiry timelines per brokerage -- range cited (30-90 days) but per-broker specifics unknown
+### Tertiary (LOW confidence, needs validation)
+- **SoFi CSV format** — Not publicly documented, needs testing with actual export (if export exists)
+- **Yahoo Finance quoteSummary stability** — Unofficial API, structure may change without notice, requires defensive parsing
 
 ---
-*Research completed: 2026-02-09*
+*Research completed: 2026-02-11*
 *Ready for roadmap: yes*
