@@ -15,6 +15,8 @@ requireAuth();
     <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect fill='%230d1117' width='512' height='512' rx='64'/%3E%3Cpath fill='%2358a6ff' d='M128 384l80-80 64 64 112-160 32 32-144 192-64-64-80 80v-64z'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/moment@^2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-moment@^1"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <style>
         :root {
@@ -1240,6 +1242,187 @@ requireAuth();
             color: var(--pico-muted-color);
         }
 
+        /* Historical Analytics Section */
+        .analytics-container {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 32px;
+            backdrop-filter: blur(10px);
+        }
+
+        .analytics-container h3 {
+            margin-top: 0;
+            margin-bottom: 24px;
+            color: var(--pico-color);
+        }
+
+        .backfill-banner {
+            background: rgba(88, 166, 255, 0.1);
+            border: 1px solid var(--pico-primary);
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        .backfill-banner p {
+            margin-bottom: 16px;
+            color: var(--pico-color);
+        }
+
+        .returns-summary {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+
+        .return-card {
+            flex: 1;
+            min-width: 120px;
+            background: rgba(22, 27, 34, 0.5);
+            border: 1px solid var(--glass-border);
+            border-radius: 8px;
+            padding: 16px;
+            text-align: center;
+        }
+
+        .return-card .label {
+            font-size: 0.75rem;
+            color: var(--pico-muted-color);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .return-card .value {
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .return-card .value.up {
+            color: var(--green);
+        }
+
+        .return-card .value.down {
+            color: var(--red);
+        }
+
+        .return-disclaimer {
+            font-size: 0.8rem;
+            color: var(--pico-muted-color);
+            margin-bottom: 24px;
+            font-style: italic;
+        }
+
+        .date-range-buttons {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .date-range-buttons button {
+            flex: 1;
+            padding: 8px 16px;
+            background: rgba(22, 27, 34, 0.5);
+            border: 1px solid var(--glass-border);
+            color: var(--pico-muted-color);
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+        .date-range-buttons button:hover {
+            background: rgba(88, 166, 255, 0.1);
+            border-color: var(--pico-primary);
+            color: var(--pico-primary);
+        }
+
+        .date-range-buttons button.active {
+            background: var(--pico-primary);
+            border-color: var(--pico-primary);
+            color: white;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin-bottom: 24px;
+        }
+
+        .chart-toggle-btn {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            width: 100%;
+            padding: 16px 20px;
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 8px;
+            color: var(--pico-color);
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 16px;
+            backdrop-filter: blur(10px);
+        }
+
+        .chart-toggle-btn:hover {
+            background: rgba(88, 166, 255, 0.1);
+            border-color: var(--pico-primary);
+        }
+
+        .chart-toggle-btn.active {
+            background: rgba(88, 166, 255, 0.15);
+            border-color: var(--pico-primary);
+        }
+
+        .chart-toggle-btn svg {
+            width: 24px;
+            height: 24px;
+            min-width: 24px;
+        }
+
+        .rankings-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+        }
+
+        .rankings-table th,
+        .rankings-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        .rankings-table th {
+            font-weight: 600;
+            color: var(--pico-muted-color);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .rankings-table td {
+            color: var(--pico-color);
+        }
+
+        .rankings-table .rank {
+            font-weight: 700;
+            color: var(--pico-primary);
+        }
+
+        .rankings-table .symbol {
+            font-weight: 700;
+        }
+
+        .rankings-table .company {
+            font-size: 0.8rem;
+            color: var(--pico-muted-color);
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             .header { flex-direction: column; align-items: flex-start; }
@@ -1426,6 +1609,115 @@ requireAuth();
                         </div>
                     </div>
                 </template>
+            </div>
+        </div>
+
+        <!-- Historical Analytics Toggle -->
+        <button class="chart-toggle-btn"
+                :class="{ active: showAnalytics }"
+                @click="toggleAnalytics()"
+                x-show="stocks.length > 0">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 3v18h18M7 16l4-4 4 4 5-6" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+            <span x-text="showAnalytics ? 'Hide Historical Analytics' : 'Show Historical Analytics'"></span>
+        </button>
+
+        <!-- Historical Analytics Panel -->
+        <div class="analytics-container" x-show="showAnalytics && stocks.length > 0" x-collapse>
+            <h3>Historical Portfolio Analytics</h3>
+
+            <!-- Loading State -->
+            <div class="news-loading" x-show="analyticsLoading">Loading analytics data...</div>
+
+            <!-- Backfill Banner (shown when no data exists) -->
+            <div class="backfill-banner" x-show="!analyticsLoading && historicalSnapshots.length === 0">
+                <p>No historical data yet. Backfill 90 days of portfolio history from Yahoo Finance.</p>
+                <button @click="triggerBackfill()" :disabled="backfillStatus === 'loading'" class="primary">
+                    <span x-show="backfillStatus !== 'loading'">Backfill History</span>
+                    <span x-show="backfillStatus === 'loading'">Backfilling... (this may take a minute)</span>
+                </button>
+            </div>
+
+            <!-- Analytics Content (shown when data exists) -->
+            <div x-show="!analyticsLoading && historicalSnapshots.length > 0">
+                <!-- Returns Summary -->
+                <div class="returns-summary">
+                    <div class="return-card">
+                        <div class="label">1 Week</div>
+                        <div class="value" :class="returns['1w'] !== null && returns['1w'] !== undefined ? (returns['1w'] >= 0 ? 'up' : 'down') : ''"
+                             x-text="returns['1w'] !== null && returns['1w'] !== undefined ? (returns['1w'] >= 0 ? '+' : '') + returns['1w'].toFixed(2) + '%' : 'N/A'"></div>
+                    </div>
+                    <div class="return-card">
+                        <div class="label">1 Month</div>
+                        <div class="value" :class="returns['1m'] !== null && returns['1m'] !== undefined ? (returns['1m'] >= 0 ? 'up' : 'down') : ''"
+                             x-text="returns['1m'] !== null && returns['1m'] !== undefined ? (returns['1m'] >= 0 ? '+' : '') + returns['1m'].toFixed(2) + '%' : 'N/A'"></div>
+                    </div>
+                    <div class="return-card">
+                        <div class="label">YTD</div>
+                        <div class="value" :class="returns['ytd'] !== null && returns['ytd'] !== undefined ? (returns['ytd'] >= 0 ? 'up' : 'down') : ''"
+                             x-text="returns['ytd'] !== null && returns['ytd'] !== undefined ? (returns['ytd'] >= 0 ? '+' : '') + returns['ytd'].toFixed(2) + '%' : 'N/A'"></div>
+                    </div>
+                    <div class="return-card">
+                        <div class="label">All-Time</div>
+                        <div class="value" :class="returns['all'] !== null && returns['all'] !== undefined ? (returns['all'] >= 0 ? 'up' : 'down') : ''"
+                             x-text="returns['all'] !== null && returns['all'] !== undefined ? (returns['all'] >= 0 ? '+' : '') + returns['all'].toFixed(2) + '%' : 'N/A'"></div>
+                    </div>
+                </div>
+
+                <!-- Disclaimer -->
+                <div class="return-disclaimer" x-show="returnDisclaimer" x-text="returnDisclaimer"></div>
+
+                <!-- Portfolio Value Chart -->
+                <div>
+                    <h4 style="margin-bottom: 12px;">Portfolio Value Over Time</h4>
+                    <div class="date-range-buttons">
+                        <button @click="selectDateRange('1w')" :class="{ active: dateRange === '1w' }">1W</button>
+                        <button @click="selectDateRange('1m')" :class="{ active: dateRange === '1m' }">1M</button>
+                        <button @click="selectDateRange('ytd')" :class="{ active: dateRange === 'ytd' }">YTD</button>
+                        <button @click="selectDateRange('all')" :class="{ active: dateRange === 'all' }">All</button>
+                    </div>
+                    <div class="chart-container" x-show="filteredSnapshots().length > 0">
+                        <canvas id="historical-chart"></canvas>
+                    </div>
+                    <div x-show="filteredSnapshots().length === 0" style="text-align: center; padding: 40px; color: var(--pico-muted-color);">
+                        No data available for this date range
+                    </div>
+                </div>
+
+                <!-- Performance Rankings -->
+                <div x-show="performanceRankings.length > 0">
+                    <h4 style="margin-bottom: 12px;">Stock Performance Rankings</h4>
+                    <table class="rankings-table">
+                        <thead>
+                            <tr>
+                                <th>Rank</th>
+                                <th>Stock</th>
+                                <th>Cost Basis</th>
+                                <th>Current</th>
+                                <th>Gain/Loss %</th>
+                                <th>Gain/Loss $</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="(stock, index) in performanceRankings" :key="stock.symbol">
+                                <tr>
+                                    <td class="rank" x-text="index + 1"></td>
+                                    <td>
+                                        <div class="symbol" x-text="stock.symbol"></div>
+                                        <div class="company" x-text="stock.company_name"></div>
+                                    </td>
+                                    <td x-text="'$' + parseFloat(stock.cost_basis).toFixed(2)"></td>
+                                    <td x-text="'$' + parseFloat(stock.current_price).toFixed(2)"></td>
+                                    <td :class="stock.gain_loss_pct >= 0 ? 'up' : 'down'"
+                                        x-text="(stock.gain_loss_pct >= 0 ? '+' : '') + stock.gain_loss_pct.toFixed(2) + '%'"></td>
+                                    <td :class="stock.gain_loss_dollars >= 0 ? 'up' : 'down'"
+                                        x-text="(stock.gain_loss_dollars >= 0 ? '+$' : '-$') + Math.abs(stock.gain_loss_dollars).toFixed(2)"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
 
@@ -1964,6 +2256,9 @@ requireAuth();
     </div>
 
     <script>
+        // Chart.js instance stored outside Alpine to prevent memory leaks
+        let historicalChart = null;
+
         function stockApp() {
             return {
                 stocks: [],
@@ -2023,6 +2318,16 @@ requireAuth();
                 showPortfolioDividends: false,
                 portfolioDividendsLoading: false,
                 portfolioDividendData: null,
+                // Historical Analytics state
+                showAnalytics: false,
+                historicalSnapshots: [],
+                dateRange: 'all',
+                returns: {},
+                latestValue: null,
+                returnDisclaimer: '',
+                performanceRankings: [],
+                backfillStatus: null,
+                analyticsLoading: false,
 
                 get isMarketOpen() {
                     const now = new Date();
@@ -2082,6 +2387,8 @@ requireAuth();
                     await this.loadStocks();
                     await this.loadAlerts();
                     await this.loadBenchmarks();
+                    // Fire-and-forget daily snapshot generation (PERF-03)
+                    fetch('api.php?action=generateSnapshot');
                     this.startAutoRefresh();
                     // Update the "ago" display every second
                     setInterval(() => this.updateCounter++, 1000);
@@ -2845,6 +3152,168 @@ requireAuth();
                         this.portfolioDividendData = { yearly: {} };
                     }
                     this.portfolioDividendsLoading = false;
+                },
+
+                // Historical Analytics Methods
+                async toggleAnalytics() {
+                    this.showAnalytics = !this.showAnalytics;
+                    if (this.showAnalytics) {
+                        this.$nextTick(() => {
+                            this.loadAnalyticsData();
+                        });
+                    } else {
+                        if (historicalChart) {
+                            historicalChart.destroy();
+                            historicalChart = null;
+                        }
+                    }
+                },
+
+                async loadAnalyticsData() {
+                    this.analyticsLoading = true;
+                    try {
+                        // Fetch snapshots
+                        const snapshotsRes = await fetch('api.php?action=snapshots&days=365');
+                        const snapshotsData = await snapshotsRes.json();
+                        this.historicalSnapshots = snapshotsData.snapshots || [];
+
+                        // Fetch returns
+                        const returnsRes = await fetch('api.php?action=returns');
+                        const returnsData = await returnsRes.json();
+                        this.returns = returnsData.returns || {};
+                        this.latestValue = returnsData.latestValue || null;
+                        this.returnDisclaimer = returnsData.disclaimer || '';
+
+                        // Fetch rankings
+                        const rankingsRes = await fetch('api.php?action=rankings');
+                        const rankingsData = await rankingsRes.json();
+                        this.performanceRankings = rankingsData.rankings || [];
+
+                        // Render chart
+                        this.renderHistoricalChart();
+                    } catch (e) {
+                        console.error('Failed to load analytics data', e);
+                        this.showToast('Failed to load analytics data', 'error');
+                    }
+                    this.analyticsLoading = false;
+                },
+
+                filteredSnapshots() {
+                    let cutoff = 0;
+                    const now = Date.now();
+
+                    if (this.dateRange === '1w') {
+                        cutoff = now - (7 * 86400000);
+                    } else if (this.dateRange === '1m') {
+                        cutoff = now - (30 * 86400000);
+                    } else if (this.dateRange === 'ytd') {
+                        cutoff = new Date(new Date().getFullYear(), 0, 1).getTime();
+                    }
+
+                    return this.historicalSnapshots.filter(s => (s.snapshot_date * 1000) >= cutoff);
+                },
+
+                renderHistoricalChart() {
+                    // Destroy existing chart
+                    if (historicalChart) {
+                        historicalChart.destroy();
+                        historicalChart = null;
+                    }
+
+                    const canvas = document.getElementById('historical-chart');
+                    if (!canvas) return;
+
+                    const filtered = this.filteredSnapshots();
+                    const data = filtered.map(s => ({
+                        x: s.snapshot_date * 1000,
+                        y: parseFloat(s.total_value)
+                    }));
+
+                    historicalChart = new Chart(canvas, {
+                        type: 'line',
+                        data: {
+                            datasets: [{
+                                label: 'Portfolio Value',
+                                data: data,
+                                borderColor: '#58a6ff',
+                                backgroundColor: 'rgba(88,166,255,0.1)',
+                                fill: true,
+                                tension: 0.1,
+                                pointRadius: 0,
+                                pointHoverRadius: 4,
+                                borderWidth: 2
+                            }]
+                        },
+                        options: {
+                            parsing: false,
+                            normalized: true,
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            scales: {
+                                x: {
+                                    type: 'time',
+                                    time: {
+                                        unit: 'day',
+                                        displayFormats: {
+                                            day: 'MMM D'
+                                        }
+                                    },
+                                    grid: {
+                                        color: 'rgba(255,255,255,0.05)'
+                                    },
+                                    ticks: {
+                                        color: '#8b949e'
+                                    }
+                                },
+                                y: {
+                                    grid: {
+                                        color: 'rgba(255,255,255,0.05)'
+                                    },
+                                    ticks: {
+                                        color: '#8b949e',
+                                        callback: (value) => '$' + value.toLocaleString()
+                                    }
+                                }
+                            },
+                            plugins: {
+                                legend: {
+                                    display: false
+                                },
+                                tooltip: {
+                                    mode: 'index',
+                                    intersect: false,
+                                    backgroundColor: 'rgba(22,27,34,0.9)',
+                                    titleColor: '#e6edf3',
+                                    bodyColor: '#e6edf3',
+                                    callbacks: {
+                                        label: (context) => {
+                                            return 'Value: $' + context.parsed.y.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
+                },
+
+                selectDateRange(range) {
+                    this.dateRange = range;
+                    this.renderHistoricalChart();
+                },
+
+                async triggerBackfill() {
+                    this.backfillStatus = 'loading';
+                    try {
+                        const res = await fetch('api.php?action=backfill');
+                        const data = await res.json();
+                        this.backfillStatus = 'done';
+                        this.showToast(data.message || 'Backfill complete', 'success');
+                        await this.loadAnalyticsData();
+                    } catch (e) {
+                        this.backfillStatus = null;
+                        console.error('Backfill failed', e);
+                        this.showToast('Backfill failed', 'error');
+                    }
                 },
 
                 // Dividend Methods
