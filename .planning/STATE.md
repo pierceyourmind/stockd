@@ -11,21 +11,21 @@ See: .planning/PROJECT.md (updated 2026-02-10)
 ## Current Position
 
 **Phase:** 6 - CSV Import Engine
-**Plan:** 1 of 2 (complete)
-**Status:** Phase in progress
+**Plan:** 2 of 2 (complete)
+**Status:** Phase complete — awaiting verification
 
-**Progress:** `[████████░░░░░░░░░░░░]` 33% (1/3 phases complete)
+**Progress:** `[█████████████░░░░░░░]` 66% (2/3 phases complete)
 
-**Last activity:** 2026-02-10 — Completed Plan 06-01 (CSV parser and import endpoint)
+**Last activity:** 2026-02-10 — Phase 6 complete (CSV import engine + upload UI)
 
-**Next action:** Execute Plan 06-02 (CSV upload UI)
+**Next action:** Verify Phase 6 goal achievement
 
 ## Performance Metrics
 
 **Velocity (v1.0 + v1.1 combined):**
-- Total plans completed: 5
-- Average duration: 282 seconds
-- Total execution time: 0.39 hours
+- Total plans completed: 6
+- Average duration: 305 seconds
+- Total execution time: 0.51 hours
 
 **By Phase:**
 
@@ -34,16 +34,16 @@ See: .planning/PROJECT.md (updated 2026-02-10)
 | 01-security-sdk-foundation | 2 | 825s | 412s |
 | 02-brokerage-connections | 1 | 169s | 169s |
 | 05-snaptrade-removal | 1 | 224s | 224s |
-| 06-csv-import-engine | 1 | 194s | 194s |
+| 06-csv-import-engine | 2 | 614s | 307s |
 
 **Recent Trend:**
-- Last 5 plans: 720s, 169s, 224s, 194s
-- Trend: Consistent (~195s avg for last 3)
+- Last 5 plans: 169s, 224s, 194s, 420s
+- Trend: Plan 06-02 longer due to human verification and parser fixes
 
 **v1.1 Milestone:**
 - Milestone started: 2026-02-10
 - Days elapsed: 0
-- Phases completed: 1/3 (33%)
+- Phases completed: 2/3 (66%)
 - Requirements delivered: 9/14 (64%)
 
 *Updated after each plan completion*
@@ -55,6 +55,9 @@ See: .planning/PROJECT.md (updated 2026-02-10)
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
+- [Phase 06-02]: Real broker exports use TSV (tab-separated), not CSV — parser auto-detects delimiter
+- [Phase 06-02]: Fidelity has separate Account Number/Name columns; Schwab has account in metadata line
+- [Phase 06-02]: Parse fetch response as text then JSON for robust error handling
 - [Phase 06-01]: Use purchase_price column for cost basis per share (existing field semantically correct, enables gain/loss)
 - [Phase 06-01]: Auto-detect broker from CSV content structure (better UX, no dropdown needed)
 - [Phase 06-01]: Upsert by symbol+account combination (allows multiple accounts with same symbol)
@@ -73,8 +76,7 @@ Recent decisions affecting current work:
 - [x] Plan Phase 5: SnapTrade Removal
 - [x] Execute Phase 5
 - [x] Plan Phase 6: CSV Import Engine
-- [x] Execute Phase 6 Plan 01 (CSV parser and import endpoint)
-- [ ] Execute Phase 6 Plan 02 (CSV upload UI)
+- [x] Execute Phase 6
 - [ ] Plan Phase 7: Re-Import & Data Management
 - [ ] Execute Phase 7
 
@@ -85,21 +87,22 @@ None currently.
 ## Session Continuity
 
 **Last session:** 2026-02-10
-**Stopped at:** Completed Phase 6 Plan 01 (CSV parser and import endpoint)
-**Next step:** Execute Phase 6 Plan 02 (CSV upload UI)
-**Resume:** `/gsd:execute-plan 06-02`
+**Stopped at:** Completed Phase 6 (CSV Import Engine — both plans)
+**Next step:** Verify Phase 6 goal, then plan Phase 7
+**Resume:** `/gsd:verify-work 6` or `/gsd:plan-phase 7`
 
-**Codebase context for Phase 6 Plan 02:**
-- CSV backend complete: parseCSV() with auto-detection, importCSV() endpoint
-- Broker support: Fidelity (16-col) and Schwab (26-col with metadata)
+**Codebase context for Phase 7:**
+- CSV import fully functional: backend parser + frontend upload UI
+- Broker support: Fidelity (TSV, 16-col) and Schwab (TSV, ~15-col)
+- Human-verified with real broker exports from both Fidelity and Schwab
 - Cost basis tracking: purchase_price stores per-share cost for gain/loss
 - Upsert logic: Updates existing symbol+account, inserts new
-- Account grouping: Broker-prefixed accounts (e.g., "Fidelity ROTH IRA - Z12345678")
-- api.php: 1,230 lines (+330 this plan)
-- index.php: Ready for CSV upload UI widget
-- Next: Build frontend to call importCSV endpoint
+- Account grouping: Broker-prefixed accounts (e.g., "Fidelity ROTH IRA", "Schwab HSA Brokerage")
+- api.php: ~1,230 lines (5 CSV functions + importCSV route)
+- index.php: ~2,750 lines (import button, modal, result display)
+- Next: Re-import diff engine, account filtering, manual cost basis editing
 
 ---
 
 *State initialized: 2026-02-09 (v1.0)*
-*Updated: 2026-02-10T23:52:12Z (Phase 6 Plan 01 complete)*
+*Updated: 2026-02-11T03:00:00Z (Phase 6 complete)*
