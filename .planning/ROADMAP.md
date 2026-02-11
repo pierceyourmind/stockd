@@ -70,10 +70,11 @@ Plans:
   2. Shared utilities extracted to lib/ folder (database, yahoo, helpers)
   3. api.php acts as router dispatching to modules (under 500 lines)
   4. All existing endpoints continue working without functional changes
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 08-01: TBD
+- [ ] 08-01-PLAN.md — Extract shared utilities to lib/ (database, yahoo, helpers, csv-parsers)
+- [ ] 08-02-PLAN.md — Extract endpoint functions to modules/ and reduce api.php to router
 
 #### Phase 9: Snapshots Foundation
 **Goal**: Database schema and snapshot generation infrastructure for historical tracking
