@@ -10,22 +10,22 @@ See: .planning/PROJECT.md (updated 2026-02-10)
 
 ## Current Position
 
-**Phase:** 6 - CSV Import Engine
-**Plan:** 2 of 2 (complete)
-**Status:** Phase complete — awaiting verification
+**Phase:** 7 - Re-Import Data Management
+**Plan:** 1 of 1 (complete)
+**Status:** Phase complete — all requirements satisfied
 
-**Progress:** `[█████████████░░░░░░░]` 66% (2/3 phases complete)
+**Progress:** `[████████████████████]` 100% (3/3 phases complete)
 
-**Last activity:** 2026-02-10 — Phase 6 complete (CSV import engine + upload UI)
+**Last activity:** 2026-02-11 — Phase 7 complete (re-import diff engine)
 
-**Next action:** Verify Phase 6 goal achievement
+**Next action:** Verify v1.1 milestone completion
 
 ## Performance Metrics
 
 **Velocity (v1.0 + v1.1 combined):**
-- Total plans completed: 6
-- Average duration: 305 seconds
-- Total execution time: 0.51 hours
+- Total plans completed: 7
+- Average duration: 520 seconds
+- Total execution time: 1.01 hours
 
 **By Phase:**
 
@@ -35,16 +35,17 @@ See: .planning/PROJECT.md (updated 2026-02-10)
 | 02-brokerage-connections | 1 | 169s | 169s |
 | 05-snaptrade-removal | 1 | 224s | 224s |
 | 06-csv-import-engine | 2 | 614s | 307s |
+| 07-reimport-data-management | 1 | 1503s | 1503s |
 
 **Recent Trend:**
-- Last 5 plans: 169s, 224s, 194s, 420s
-- Trend: Plan 06-02 longer due to human verification and parser fixes
+- Last 5 plans: 224s, 194s, 420s, 1503s
+- Trend: Plan 07-01 longer due to human verification checkpoint
 
 **v1.1 Milestone:**
 - Milestone started: 2026-02-10
-- Days elapsed: 0
-- Phases completed: 2/3 (66%)
-- Requirements delivered: 9/14 (64%)
+- Days elapsed: 1
+- Phases completed: 3/3 (100%)
+- Requirements delivered: 14/14 (100%)
 
 *Updated after each plan completion*
 
@@ -55,6 +56,10 @@ See: .planning/PROJECT.md (updated 2026-02-10)
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
+- [Phase 07-01]: Flag missing stocks instead of auto-delete — user confirms removal
+- [Phase 07-01]: Track imported symbols per account for accurate diff detection
+- [Phase 07-01]: Clear removed_flag automatically if stock reappears in re-import
+- [Phase 07-01]: Restrict flagging to holdings only (exclude watchlist stocks)
 - [Phase 06-02]: Real broker exports use TSV (tab-separated), not CSV — parser auto-detects delimiter
 - [Phase 06-02]: Fidelity has separate Account Number/Name columns; Schwab has account in metadata line
 - [Phase 06-02]: Parse fetch response as text then JSON for robust error handling
@@ -77,8 +82,9 @@ Recent decisions affecting current work:
 - [x] Execute Phase 5
 - [x] Plan Phase 6: CSV Import Engine
 - [x] Execute Phase 6
-- [ ] Plan Phase 7: Re-Import & Data Management
-- [ ] Execute Phase 7
+- [x] Plan Phase 7: Re-Import & Data Management
+- [x] Execute Phase 7
+- [ ] Verify v1.1 milestone completion
 
 ### Blockers/Concerns
 
@@ -86,23 +92,23 @@ None currently.
 
 ## Session Continuity
 
-**Last session:** 2026-02-10
-**Stopped at:** Completed Phase 6 (CSV Import Engine — both plans)
-**Next step:** Verify Phase 6 goal, then plan Phase 7
-**Resume:** `/gsd:verify-work 6` or `/gsd:plan-phase 7`
+**Last session:** 2026-02-11
+**Stopped at:** Completed Phase 7 Plan 01 (Re-import diff engine)
+**Next step:** Verify v1.1 milestone completion
+**Resume:** `/gsd:verify-work 7` or `/gsd:verify-milestone v1.1`
 
-**Codebase context for Phase 7:**
-- CSV import fully functional: backend parser + frontend upload UI
+**Codebase context for v1.1:**
+- CSV import fully functional with re-import diff detection
 - Broker support: Fidelity (TSV, 16-col) and Schwab (TSV, ~15-col)
-- Human-verified with real broker exports from both Fidelity and Schwab
-- Cost basis tracking: purchase_price stores per-share cost for gain/loss
-- Upsert logic: Updates existing symbol+account, inserts new
-- Account grouping: Broker-prefixed accounts (e.g., "Fidelity ROTH IRA", "Schwab HSA Brokerage")
-- api.php: ~1,230 lines (5 CSV functions + importCSV route)
-- index.php: ~2,750 lines (import button, modal, result display)
-- Next: Re-import diff engine, account filtering, manual cost basis editing
+- Re-import flags missing stocks with `removed_flag` column
+- User can confirm removal or dismiss flag via banner on stock cards
+- Account filtering dropdown filters portfolio by account
+- Cost basis editing via Edit modal updates gain/loss calculation
+- api.php: ~1,280 lines (importCSV with diff detection, dismissFlag, confirmRemoval)
+- index.php: ~2,840 lines (flagged stock UI, action buttons)
+- All v1.1 requirements satisfied (14/14)
 
 ---
 
 *State initialized: 2026-02-09 (v1.0)*
-*Updated: 2026-02-11T03:00:00Z (Phase 6 complete)*
+*Updated: 2026-02-11 (Phase 7 complete, v1.1 milestone ready for verification)*
