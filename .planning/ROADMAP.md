@@ -1,126 +1,43 @@
-# Roadmap: v1.1 CSV Portfolio Import
+# Roadmap: Stockd
 
-**Milestone:** v1.1 CSV Portfolio Import
-**Defined:** 2026-02-10
-**Depth:** Quick (3 phases)
-**Coverage:** 14/14 requirements mapped
+## Milestones
 
-## Overview
-
-Replace SnapTrade API integration with CSV file upload for Fidelity and Schwab holdings. Remove all third-party sync dependencies. Enable simple, cost-free portfolio updates through broker-exported CSV files with cost basis tracking.
+- ✅ **v1.0 Security & SDK Foundation** — Phases 1-2 (partial, pivoted 2026-02-10)
+- ✅ **v1.1 CSV Portfolio Import** — Phases 5-7 (shipped 2026-02-11)
 
 ## Phases
 
-**Phase Numbering:**
-- Integer phases (5, 6, 7): Planned milestone work
-- Decimal phases (5.1, 5.2): Urgent insertions (marked with INSERTED)
+<details>
+<summary>✅ v1.0 Security & SDK Foundation (Phases 1-2) — PARTIAL 2026-02-10</summary>
 
-Decimal phases appear between their surrounding integers in numeric order.
+- [x] Phase 1: Security & SDK Foundation (2/2 plans) — completed 2026-02-09
+- [x] Phase 2: Brokerage Connections (1/1 plan) — completed 2026-02-10
+- Phases 3-4 abandoned (SnapTrade doesn't support Fidelity/SoFi)
 
-- [x] **Phase 5: SnapTrade Removal** - Clean codebase of all SnapTrade dependencies ✓ 2026-02-10
-- [x] **Phase 6: CSV Import Engine** - Upload and parse Fidelity/Schwab CSVs with auto-detection ✓ 2026-02-10
-- [x] **Phase 7: Re-Import & Data Management** - Update workflow with diff review and manual cost basis editing ✓ 2026-02-11
+</details>
 
-## Phase Details
+<details>
+<summary>✅ v1.1 CSV Portfolio Import (Phases 5-7) — SHIPPED 2026-02-11</summary>
 
-### Phase 5: SnapTrade Removal
+- [x] Phase 5: SnapTrade Removal (1/1 plan) — completed 2026-02-10
+- [x] Phase 6: CSV Import Engine (2/2 plans) — completed 2026-02-10
+- [x] Phase 7: Re-Import & Data Management (1/1 plan) — completed 2026-02-11
 
-**Goal:** Codebase is clean of all SnapTrade dependencies, ready for CSV-based import implementation
-
-**Depends on:** Nothing (first phase of milestone)
-
-**Requirements:** CLEAN-01, CLEAN-02, CLEAN-03
-
-**Success Criteria** (what must be TRUE):
-1. No SnapTrade code remains in api.php, index.php, or auth directory
-2. Composer.json and composer.lock contain no snaptrade-php-sdk dependency
-3. Database contains no brokerage_connections or snaptrade_* tables
-4. App continues to function with existing manual stock entry and auth gate
-
-**Plans:** 1 plan
-
-Plans:
-- [x] 05-01-PLAN.md -- Remove all SnapTrade code, files, SDK dependency, database tables, and env vars ✓
-
----
-
-### Phase 6: CSV Import Engine
-
-**Goal:** Users can upload Fidelity or Schwab CSV files and see holdings imported with correct cost basis and account grouping
-
-**Depends on:** Phase 5 (clean foundation)
-
-**Requirements:** CSV-01, CSV-02, CSV-03, CSV-04, ACCT-01, COST-01
-
-**Success Criteria** (what must be TRUE):
-1. User uploads Fidelity CSV via UI and sees holdings appear in portfolio grouped by account
-2. User uploads Schwab CSV via UI and sees holdings appear in portfolio grouped by account
-3. App auto-detects broker format without user selection
-4. Imported stocks show correct gain/loss calculated from CSV cost basis
-5. Numeric values with currency symbols, percentages, and null indicators parse correctly
-
-**Plans:** 2 plans
-
-Plans:
-- [x] 06-01-PLAN.md -- CSV parser with broker auto-detection and import API endpoint ✓
-- [x] 06-02-PLAN.md -- Upload UI with import modal and result display ✓
-
----
-
-### Phase 7: Re-Import & Data Management
-
-**Goal:** Users can re-upload CSV files to refresh holdings, review what changed, and manually adjust cost basis as needed
-
-**Depends on:** Phase 6 (import engine exists)
-
-**Requirements:** REIMP-01, REIMP-02, REIMP-03, ACCT-02, COST-02
-
-**Success Criteria** (what must be TRUE):
-1. Re-uploading CSV for same account updates existing holdings quantities and cost basis
-2. Stocks present in previous import but missing from new CSV are flagged with visual indicator
-3. User can review flagged stocks and confirm removal or dismiss flag
-4. User can filter portfolio view to show stocks from specific account
-5. User can manually edit cost basis for any stock (imported or manual) and see updated gain/loss
-
-**Plans:** 1 plan
-
-Plans:
-- [x] 07-01-PLAN.md -- Re-import diff engine with flagged stock management and human verification (ACCT-02 and COST-02 already satisfied by existing UI) ✓
-
----
+</details>
 
 ## Progress
 
-**Execution Order:**
-Phases execute in numeric order: 5 -> 6 -> 7
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 1. Security & SDK Foundation | v1.0 | 2/2 | Complete | 2026-02-09 |
+| 2. Brokerage Connections | v1.0 | 1/1 | Complete | 2026-02-10 |
+| 5. SnapTrade Removal | v1.1 | 1/1 | Complete | 2026-02-10 |
+| 6. CSV Import Engine | v1.1 | 2/2 | Complete | 2026-02-10 |
+| 7. Re-Import & Data Management | v1.1 | 1/1 | Complete | 2026-02-11 |
 
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 5. SnapTrade Removal | 1/1 | ✓ Complete | 2026-02-10 |
-| 6. CSV Import Engine | 2/2 | ✓ Complete | 2026-02-10 |
-| 7. Re-Import & Data Management | 1/1 | ✓ Complete | 2026-02-11 |
-
-**Overall:** 3/3 phases complete
-
----
-
-## Requirement Coverage
-
-All 14 v1.1 requirements mapped to phases:
-
-| Category | Requirements | Phase |
-|----------|--------------|-------|
-| Cleanup | CLEAN-01, CLEAN-02, CLEAN-03 | 5 |
-| CSV Import | CSV-01, CSV-02, CSV-03, CSV-04 | 6 |
-| Account Organization | ACCT-01 | 6 |
-| Account Organization | ACCT-02 | 7 |
-| Re-Import | REIMP-01, REIMP-02, REIMP-03 | 7 |
-| Cost Basis | COST-01 | 6 |
-| Cost Basis | COST-02 | 7 |
-
-**Coverage:** 14/14 requirements (100%)
+**Overall:** 5 phases complete across 2 milestones
 
 ---
 
-*Roadmap created: 2026-02-10*
-*Last updated: 2026-02-11 (Phase 7 complete — milestone v1.1 done)*
+*Roadmap created: 2026-02-09*
+*Last updated: 2026-02-11 (v1.1 milestone archived)*
