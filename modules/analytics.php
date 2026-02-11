@@ -116,3 +116,137 @@ function getSnapshots(PDO $pdo): never {
         'days' => $days
     ]);
 }
+
+/**
+ * Enrich sector data for all portfolio holdings
+ * Fetches sector/industry from Yahoo Finance for uncached symbols
+ */
+function enrichSectors(PDO $pdo): never {
+    // Get all unique symbols from active holdings
+    $stmt = $pdo->query("
+        SELECT DISTINCT symbol
+        FROM stocks
+        WHERE is_watchlist = 0 AND removed_flag = 0
+    ");
+    $symbols = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+    // Define 30-day TTL
+    $thirtyDaysAgo = time() - (30 * 24 * 60 * 60);
+
+    $results = [];
+    $fetched = 0;
+    $cached = 0;
+    $failed = 0;
+
+    foreach ($symbols as $symbol) {
+        // Check for valid cache entry
+        $stmt = $pdo->prepare("
+            SELECT sector, industry
+            FROM sector_cache
+            WHERE symbol = ? AND cached_at > ?
+            ORDER BY cached_at DESC
+            LIMIT 1
+        ");
+        $stmt->execute([$symbol, $thirtyDaysAgo]);
+        $cacheEntry = $stmt->fetch();
+
+        if ($cacheEntry) {
+            // Valid cache exists, use it
+            $results[] = [
+                'symbol' => $symbol,
+                'sector' => $cacheEntry['sector'],
+                'industry' => $cacheEntry['industry'],
+                'cached' => true
+            ];
+            $cached++;
+        } else {
+            // No valid cache, fetch from Yahoo Finance
+            $data = fetchSectorData($symbol);
+
+            if ($data['error']) {
+                // Fetch failed
+                $results[] = [
+                    'symbol' => $symbol,
+                    'sector' => null,
+                    'industry' => null,
+                    'cached' => false,
+                    'error' => true
+                ];
+                $failed++;
+            } else {
+                // Fetch succeeded, insert into cache
+                $stmt = $pdo->prepare("
+                    INSERT INTO sector_cache (symbol, sector, industry, cached_at)
+                    VALUES (?, ?, ?, ?)
+                ");
+                $stmt->execute([$symbol, $data['sector'], $data['industry'], time()]);
+
+                $results[] = [
+                    'symbol' => $symbol,
+                    'sector' => $data['sector'],
+                    'industry' => $data['industry'],
+                    'cached' => false
+                ];
+                $fetched++;
+
+                // Rate limiting: 500ms delay after each Yahoo Finance request
+                usleep(500000);
+            }
+        }
+    }
+
+    jsonResponse([
+        'results' => $results,
+        'fetched' => $fetched,
+        'cached' => $cached,
+        'failed' => $failed
+    ]);
+}
+
+/**
+ * Get cached sector data for all holdings
+ * Returns sector/industry data for allocation charts
+ */
+function getSectors(PDO $pdo): never {
+    // Define 30-day TTL
+    $thirtyDaysAgo = time() - (30 * 24 * 60 * 60);
+
+    // Get all active holdings symbols
+    $stmt = $pdo->query("
+        SELECT DISTINCT symbol
+        FROM stocks
+        WHERE is_watchlist = 0 AND removed_flag = 0
+        ORDER BY symbol
+    ");
+    $symbols = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+    // Fetch all non-expired cache entries
+    $stmt = $pdo->prepare("
+        SELECT symbol, sector, industry, cached_at
+        FROM sector_cache
+        WHERE cached_at > ?
+        ORDER BY cached_at DESC
+    ");
+    $stmt->execute([$thirtyDaysAgo]);
+    $cacheEntries = $stmt->fetchAll();
+
+    // Deduplicate by symbol (take latest entry per symbol)
+    $cacheMap = [];
+    foreach ($cacheEntries as $entry) {
+        $symbol = $entry['symbol'];
+        if (!isset($cacheMap[$symbol])) {
+            $cacheMap[$symbol] = [
+                'sector' => $entry['sector'],
+                'industry' => $entry['industry']
+            ];
+        }
+    }
+
+    // Build results mapping each symbol to its sector/industry
+    $results = [];
+    foreach ($symbols as $symbol) {
+        $results[$symbol] = $cacheMap[$symbol] ?? ['sector' => null, 'industry' => null];
+    }
+
+    jsonResponse(['sectors' => $results]);
+}
