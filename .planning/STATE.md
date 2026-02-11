@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-11)
 
 **Core value:** Portfolio data stays current through simple CSV re-imports from brokers, with manual entry available for any stock — no API keys, no OAuth, no third-party dependencies.
-**Current focus:** Phase 9 complete — ready for Phase 10
+**Current focus:** Phase 10 in progress — Historical Analytics backend complete (plan 01), frontend next (plan 02)
 
 ## Current Position
 
-Phase: 9 of 12 (Snapshots Foundation)
-Plan: 2 of 2 in current phase
-Status: Complete
-Last activity: 2026-02-11 — Completed plan 09-02
+Phase: 10 of 12 (Historical Analytics)
+Plan: 1 of 2 in current phase
+Status: In Progress
+Last activity: 2026-02-11 — Completed plan 10-01
 
 Progress: [████████░░] 75% (9 of 12 phases complete)
 
 ## Performance Metrics
 
 **Velocity (v1.0 + v1.1 + v1.2 combined):**
-- Total plans completed: 11
-- Average duration: 282 seconds
-- Total execution time: 1.17 hours
+- Total plans completed: 12
+- Average duration: 271 seconds
+- Total execution time: 1.21 hours
 
 **By Phase:**
 
@@ -34,11 +34,14 @@ Progress: [████████░░] 75% (9 of 12 phases complete)
 | 07-reimport-data-management | 1 | 1503s | 1503s |
 | 08-refactoring | 2 | 512s | 256s |
 | 09-snapshots-foundation | 2 | 207s | 103s |
+| 10-historical-analytics | 1 | 149s | 149s |
 
 **Recent Trend:**
 - Phase 09 complete (2 of 2 plans, 207s total)
+- Phase 10 in progress (1 of 2 plans, 149s so far)
 - Trend: Improving
 | Phase 09-snapshots-foundation P02 | 1 min | 2 tasks | 3 files |
+| Phase 10-historical-analytics P01 | 2 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -56,6 +59,9 @@ Recent decisions affecting v1.2:
 - [Phase 09]: 100ms Yahoo Finance rate limiting (matches dividends.php pattern)
 - [Phase 09]: Fallback to purchase_price on Yahoo fetch failure (snapshot resilience)
 - [Phase 09-02]: 500ms rate limiting for sector fetches (more conservative than 100ms for price data) — Sector data fetched in bulk, quoteSummary endpoint needs more conservative delays
+- [Phase 10]: O(symbols) Yahoo calls not O(symbols*dates) - fetch all prices first, then calculate snapshots
+- [Phase 10]: ON CONFLICT DO NOTHING preserves real-time snapshots over backfilled historical data
+- [Phase 10]: YTD correctly uses January 1 of current year per standard financial definition
 
 ### Pending Todos
 
@@ -78,9 +84,9 @@ None yet.
 
 ## Session Continuity
 
-**Last session:** 2026-02-11
-**Stopped at:** Phase 9 verified and complete
-**Next step:** Begin Phase 10 (Historical Analytics)
+**Last session:** 2026-02-11T23:54:20.731Z
+**Stopped at:** Completed 10-01-PLAN.md
+**Next step:** Execute 10-02-PLAN.md (Frontend Charts & Analytics UI)
 **Resume:** None
 
 ---
