@@ -82,12 +82,10 @@ Plans:
 4. User can filter portfolio view to show stocks from specific account
 5. User can manually edit cost basis for any stock (imported or manual) and see updated gain/loss
 
-**Plans:** TBD
+**Plans:** 1 plan
 
 Plans:
-- [ ] 07-01: Re-import diff engine (detect removed stocks, flag for review)
-- [ ] 07-02: Account filtering UI enhancement
-- [ ] 07-03: Manual cost basis editing UI
+- [ ] 07-01-PLAN.md -- Re-import diff engine with flagged stock management and human verification (ACCT-02 and COST-02 already satisfied by existing UI)
 
 ---
 
@@ -100,7 +98,7 @@ Phases execute in numeric order: 5 -> 6 -> 7
 |-------|----------------|--------|-----------|
 | 5. SnapTrade Removal | 1/1 | ✓ Complete | 2026-02-10 |
 | 6. CSV Import Engine | 2/2 | ✓ Complete | 2026-02-10 |
-| 7. Re-Import & Data Management | 0/3 | Not started | - |
+| 7. Re-Import & Data Management | 0/1 | Planned | - |
 
 **Overall:** 2/3 phases complete
 
