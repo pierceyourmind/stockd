@@ -57,5 +57,6 @@ match ($action) {
     'snapshots' => getSnapshots($pdo),
     'enrichSectors' => enrichSectors($pdo),
     'sectors' => getSectors($pdo),
+    'backfill' => backfillSnapshots($pdo),
     default => jsonResponse(['error' => 'Invalid action'], 400),
 };

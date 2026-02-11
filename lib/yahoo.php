@@ -18,6 +18,62 @@ function yahooContext(int $timeout = 15) {
 }
 
 /**
+ * Fetch historical prices from Yahoo Finance v8 chart endpoint
+ *
+ * @param string $symbol Stock symbol to fetch historical prices for
+ * @param int $days Number of days of historical data (default: 90)
+ * @return array{error: bool, prices: array<array{date: int, close: float}>}
+ */
+function fetchHistoricalPrices(string $symbol, int $days = 90): array {
+    // Calculate time period in Unix seconds
+    $period1 = time() - ($days * 86400);
+    $period2 = time();
+
+    // Build Yahoo Finance chart URL
+    $url = "https://query1.finance.yahoo.com/v8/finance/chart/" . urlencode($symbol)
+         . "?period1={$period1}&period2={$period2}&interval=1d";
+
+    // Create Yahoo Finance context
+    $context = yahooContext();
+
+    // Fetch data
+    $response = @file_get_contents($url, false, $context);
+
+    // Handle fetch failure
+    if ($response === false) {
+        return ['error' => true, 'prices' => []];
+    }
+
+    // Decode JSON response
+    $data = json_decode($response, true);
+
+    // Extract result
+    $result = $data['chart']['result'][0] ?? null;
+
+    if ($result === null) {
+        return ['error' => true, 'prices' => []];
+    }
+
+    // Extract timestamps and close prices
+    $timestamps = $result['timestamp'] ?? [];
+    $closes = $result['indicators']['quote'][0]['close'] ?? [];
+
+    // Build prices array, skipping null values (weekends/holidays)
+    $prices = [];
+    foreach ($timestamps as $i => $ts) {
+        $close = $closes[$i] ?? null;
+        if ($close !== null) {
+            $prices[] = [
+                'date' => (int) $ts,
+                'close' => (float) $close
+            ];
+        }
+    }
+
+    return ['error' => false, 'prices' => $prices];
+}
+
+/**
  * Fetch sector and industry data from Yahoo Finance quoteSummary endpoint
  *
  * @param string $symbol Stock symbol to fetch sector data for

@@ -250,3 +250,86 @@ function getSectors(PDO $pdo): never {
 
     jsonResponse(['sectors' => $results]);
 }
+
+/**
+ * Backfill historical portfolio snapshots
+ * Fetches 90 days of historical prices from Yahoo Finance and generates snapshots
+ */
+function backfillSnapshots(PDO $pdo): never {
+    // Get all active holdings with distinct symbols
+    $stmt = $pdo->query("
+        SELECT DISTINCT symbol, shares, purchase_price
+        FROM stocks
+        WHERE is_watchlist = 0
+          AND removed_flag = 0
+          AND shares > 0
+    ");
+    $holdings = $stmt->fetchAll();
+
+    // Fetch historical prices for all symbols (O(symbols) Yahoo calls)
+    $priceMap = [];
+    foreach ($holdings as $holding) {
+        $symbol = $holding['symbol'];
+
+        // Fetch 90 days of historical prices
+        $result = fetchHistoricalPrices($symbol, 90);
+
+        if (!$result['error']) {
+            // Build price map: normalized date => close price
+            foreach ($result['prices'] as $price) {
+                $normalizedDate = strtotime('midnight', $price['date']);
+                $priceMap[$symbol][$normalizedDate] = $price['close'];
+            }
+        }
+
+        // Rate limiting: 100ms between Yahoo requests
+        usleep(100000);
+    }
+
+    // Generate snapshots for each of the last 90 days
+    $backfilled = 0;
+    $skipped = 0;
+    $startDate = strtotime('90 days ago midnight');
+    $endDate = strtotime('today midnight');
+
+    for ($date = $startDate; $date <= $endDate; $date += 86400) {
+        // Skip if snapshot already exists
+        $stmt = $pdo->prepare("SELECT id FROM portfolio_snapshots WHERE snapshot_date = ?");
+        $stmt->execute([$date]);
+        if ($stmt->fetch()) {
+            $skipped++;
+            continue;
+        }
+
+        // Calculate portfolio value for this date
+        $totalValue = 0.0;
+        $stockCount = count($holdings);
+
+        foreach ($holdings as $holding) {
+            $symbol = $holding['symbol'];
+            $shares = (float) $holding['shares'];
+            $purchasePrice = (float) ($holding['purchase_price'] ?? 0);
+
+            // Lookup historical price, fallback to purchase_price
+            $price = $priceMap[$symbol][$date] ?? $purchasePrice;
+            $totalValue += $shares * $price;
+        }
+
+        // Insert snapshot (ON CONFLICT DO NOTHING to preserve real-time snapshots)
+        $stmt = $pdo->prepare("
+            INSERT INTO portfolio_snapshots (snapshot_date, total_value, stock_count)
+            VALUES (?, ?, ?)
+            ON CONFLICT(snapshot_date) DO NOTHING
+        ");
+        $stmt->execute([$date, $totalValue, $stockCount]);
+
+        $backfilled++;
+    }
+
+    jsonResponse([
+        'backfilled' => $backfilled,
+        'skipped' => $skipped,
+        'total_dates' => 90,
+        'message' => "Backfilled {$backfilled} snapshots"
+    ]);
+}
