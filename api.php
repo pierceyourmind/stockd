@@ -58,5 +58,7 @@ match ($action) {
     'enrichSectors' => enrichSectors($pdo),
     'sectors' => getSectors($pdo),
     'backfill' => backfillSnapshots($pdo),
+    'returns' => getReturns($pdo),
+    'rankings' => getPerformanceRankings($pdo),
     default => jsonResponse(['error' => 'Invalid action'], 400),
 };

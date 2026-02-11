@@ -333,3 +333,136 @@ function backfillSnapshots(PDO $pdo): never {
         'message' => "Backfilled {$backfilled} snapshots"
     ]);
 }
+
+/**
+ * Calculate portfolio returns for 1W/1M/YTD/all-time periods
+ * Returns simple percentage returns from portfolio_snapshots data
+ */
+function getReturns(PDO $pdo): never {
+    // Define time ranges
+    $ranges = [
+        '1w' => time() - (7 * 86400),
+        '1m' => time() - (30 * 86400),
+        'ytd' => strtotime('first day of January this year midnight'),
+        'all' => 0
+    ];
+
+    // Get latest snapshot
+    $stmt = $pdo->query("
+        SELECT total_value
+        FROM portfolio_snapshots
+        ORDER BY snapshot_date DESC
+        LIMIT 1
+    ");
+    $latest = $stmt->fetch();
+    $latestValue = $latest ? (float) $latest['total_value'] : null;
+
+    // Calculate returns for each period
+    $returns = [];
+    foreach ($ranges as $period => $startTimestamp) {
+        // Get earliest snapshot at or after start date
+        $stmt = $pdo->prepare("
+            SELECT total_value
+            FROM portfolio_snapshots
+            WHERE snapshot_date >= ?
+            ORDER BY snapshot_date ASC
+            LIMIT 1
+        ");
+        $stmt->execute([$startTimestamp]);
+        $start = $stmt->fetch();
+
+        if ($start && $latestValue !== null) {
+            $startValue = (float) $start['total_value'];
+
+            // Handle division by zero
+            if ($startValue == 0) {
+                $returns[$period] = 0.0;
+            } else {
+                $returns[$period] = round((($latestValue - $startValue) / $startValue) * 100, 2);
+            }
+        } else {
+            // Missing data for this range
+            $returns[$period] = null;
+        }
+    }
+
+    jsonResponse([
+        'returns' => $returns,
+        'latest_value' => $latestValue,
+        'disclaimer' => 'Price return only. Does not include dividends, fees, or the effect of deposits/withdrawals. For tax reporting, use your broker statements.'
+    ]);
+}
+
+/**
+ * Get per-stock performance rankings
+ * Returns all holdings sorted by gain/loss percentage descending
+ */
+function getPerformanceRankings(PDO $pdo): never {
+    // Get all active holdings with cost basis
+    $stmt = $pdo->query("
+        SELECT symbol, company_name, shares, purchase_price
+        FROM stocks
+        WHERE is_watchlist = 0
+          AND removed_flag = 0
+          AND shares > 0
+          AND purchase_price IS NOT NULL
+          AND purchase_price > 0
+    ");
+    $holdings = $stmt->fetchAll();
+
+    $rankings = [];
+    $context = yahooContext();
+
+    foreach ($holdings as $holding) {
+        $symbol = $holding['symbol'];
+        $companyName = $holding['company_name'];
+        $shares = (float) $holding['shares'];
+        $purchasePrice = (float) $holding['purchase_price'];
+
+        // Fetch current price from Yahoo Finance
+        $url = "https://query1.finance.yahoo.com/v8/finance/chart/" . urlencode($symbol) . "?interval=1d&range=1d";
+        $response = @file_get_contents($url, false, $context);
+
+        $currentPrice = null;
+
+        if ($response !== false) {
+            $data = json_decode($response, true);
+            if (isset($data['chart']['result'][0]['meta']['regularMarketPrice'])) {
+                $currentPrice = (float) $data['chart']['result'][0]['meta']['regularMarketPrice'];
+            }
+        }
+
+        // Skip if Yahoo fetch fails
+        if ($currentPrice === null || $currentPrice <= 0) {
+            // Rate limiting even on failures
+            usleep(100000);
+            continue;
+        }
+
+        // Calculate metrics
+        $gainLossPct = round((($currentPrice - $purchasePrice) / $purchasePrice) * 100, 2);
+        $gainLossAmount = round(($currentPrice - $purchasePrice) * $shares, 2);
+        $totalValue = round($currentPrice * $shares, 2);
+
+        $rankings[] = [
+            'symbol' => $symbol,
+            'company_name' => $companyName,
+            'cost_basis' => $purchasePrice,
+            'current_price' => $currentPrice,
+            'shares' => $shares,
+            'gain_loss_pct' => $gainLossPct,
+            'gain_loss_amount' => $gainLossAmount,
+            'total_value' => $totalValue
+        ];
+
+        // Rate limiting: 100ms between requests
+        usleep(100000);
+    }
+
+    // Sort by gain_loss_pct descending (best performers first)
+    usort($rankings, function($a, $b) {
+        return $b['gain_loss_pct'] <=> $a['gain_loss_pct'];
+    });
+
+    jsonResponse(['rankings' => $rankings]);
+}
