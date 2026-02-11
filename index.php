@@ -2451,7 +2451,7 @@ requireAuth();
                     const stockCanvas = document.getElementById('allocation-by-stock-chart');
                     if (stockCanvas) {
                         const stockTotals = {};
-                        this.stocks.filter(s => s.quote && s.shares).forEach(s => {
+                        this.stocks.filter(s => s.quote && s.shares && s.symbol !== 'LIHKX').forEach(s => {
                             stockTotals[s.symbol] = (stockTotals[s.symbol] || 0) + (s.quote.price * parseFloat(s.shares));
                         });
                         const stockData = Object.entries(stockTotals)
