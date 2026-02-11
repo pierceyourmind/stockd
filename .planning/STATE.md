@@ -56,6 +56,7 @@ None currently.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 1 | Aggregate duplicate symbols in allocation chart | 2026-02-11 | fb79ee5 | [1-make-allocation-by-stock-chart-combine-s](./quick/1-make-allocation-by-stock-chart-combine-s/) |
+| 2 | Show percentage beside stock labels in allocation chart | 2026-02-11 | abf988c | — |
 
 ## Session Continuity
 
