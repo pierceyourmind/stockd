@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-11)
 
 **Core value:** Portfolio data stays current through simple CSV re-imports from brokers, with manual entry available for any stock — no API keys, no OAuth, no third-party dependencies.
-**Current focus:** Phase 8 - Refactoring
+**Current focus:** Phase 9 - Snapshots Foundation
 
 ## Current Position
 
-Phase: 8 of 12 (Refactoring)
-Plan: 2 of 2 in current phase
-Status: Complete
-Last activity: 2026-02-11 — Completed plan 08-02
+Phase: 9 of 12 (Snapshots Foundation)
+Plan: 1 of 2 in current phase
+Status: In Progress
+Last activity: 2026-02-11 — Completed plan 09-01
 
 Progress: [████████░░] 67% (8 of 12 phases complete)
 
 ## Performance Metrics
 
 **Velocity (v1.0 + v1.1 + v1.2 combined):**
-- Total plans completed: 9
-- Average duration: 438 seconds
-- Total execution time: 1.09 hours
+- Total plans completed: 10
+- Average duration: 404 seconds
+- Total execution time: 1.12 hours
 
 **By Phase:**
 
@@ -33,10 +33,11 @@ Progress: [████████░░] 67% (8 of 12 phases complete)
 | 06-csv-import-engine | 2 | 614s | 307s |
 | 07-reimport-data-management | 1 | 1503s | 1503s |
 | 08-refactoring | 2 | 512s | 256s |
+| 09-snapshots-foundation | 1 | 104s | 104s |
 
 **Recent Trend:**
-- Phase 08 completed (2 plans, 512s total)
-- Trend: Stable
+- Phase 09 in progress (1 of 2 plans, 104s)
+- Trend: Improving
 
 ## Accumulated Context
 
@@ -50,6 +51,9 @@ Recent decisions affecting v1.2:
 - v1.2 planning: Refactor first to prevent monolithic complexity explosion (4,100 → 8,000+ lines)
 - [Phase 08]: Organized endpoints into 6 domain modules plus analytics placeholder
 - [Phase 08]: Reduced api.php from 926 to 57 lines (94% reduction) creating pure router
+- [Phase 09]: INTEGER timestamps for snapshot_date (3x faster sorting, efficient TTL math)
+- [Phase 09]: 100ms Yahoo Finance rate limiting (matches dividends.php pattern)
+- [Phase 09]: Fallback to purchase_price on Yahoo fetch failure (snapshot resilience)
 
 ### Pending Todos
 
@@ -72,8 +76,8 @@ None yet.
 
 ## Session Continuity
 
-**Last session:** 2026-02-11
-**Stopped at:** Completed 08-02-PLAN.md (Phase 8 complete)
+**Last session:** 2026-02-11T22:32:00.662Z
+**Stopped at:** Completed 09-01-PLAN.md
 **Next step:** Begin Phase 9 (Sector Classification)
 **Resume:** None
 
