@@ -1423,6 +1423,78 @@ requireAuth();
             color: var(--pico-muted-color);
         }
 
+        /* Allocation Charts Row - side by side on desktop, stacked on mobile */
+        .allocation-charts-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        /* Concentration Warning Badges */
+        .concentration-warnings {
+            margin-bottom: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .concentration-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            background: rgba(248, 81, 73, 0.1);
+            border: 1px solid rgba(248, 81, 73, 0.3);
+            border-radius: 8px;
+            color: #f0883e;
+            font-size: 0.9em;
+        }
+
+        /* Dividend Income Section */
+        .dividend-income-section {
+            margin-top: 20px;
+        }
+        .income-total-card {
+            background: var(--glass-bg, rgba(22, 27, 34, 0.6));
+            border: 1px solid var(--glass-border, rgba(48, 54, 61, 0.6));
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 16px;
+        }
+        .income-total-amount {
+            font-size: 2em;
+            font-weight: 700;
+            color: #3fb950;
+        }
+        .income-total-label {
+            font-size: 0.9em;
+            color: var(--pico-muted-color);
+            margin-top: 4px;
+        }
+        .income-monthly {
+            font-size: 1.1em;
+            color: #8b949e;
+            margin-top: 8px;
+        }
+
+        /* Income Tables */
+        .income-sector-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9em;
+        }
+        .income-sector-table th {
+            color: var(--pico-muted-color);
+            font-weight: 600;
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--glass-border, rgba(48, 54, 61, 0.6));
+        }
+        .income-sector-table td {
+            padding: 8px 12px;
+            border-bottom: 1px solid rgba(48, 54, 61, 0.3);
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             .header { flex-direction: column; align-items: flex-start; }
@@ -1433,6 +1505,7 @@ requireAuth();
             .controls-bar .filter-pills { justify-content: center; }
             .benchmark-section { grid-template-columns: 1fr 1fr; }
             .view-tabs { width: 100%; justify-content: center; }
+            .allocation-charts-row { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -1717,6 +1790,150 @@ requireAuth();
                             </template>
                         </tbody>
                     </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Allocation & Risk Toggle Button -->
+        <button class="chart-toggle-btn"
+                :class="{ active: showAllocation }"
+                @click="toggleAllocation()"
+                x-show="stocks.length > 0">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <path d="M12 2v10l8.5 5"></path>
+            </svg>
+            <span x-text="showAllocation ? 'Hide Allocation & Income' : 'Show Allocation & Income'"></span>
+        </button>
+
+        <!-- Allocation & Risk Panel -->
+        <div class="analytics-container" x-show="showAllocation && stocks.length > 0" x-collapse>
+            <h3>Portfolio Allocation & Income</h3>
+
+            <!-- Loading State -->
+            <div class="news-loading" x-show="allocationLoading">Loading allocation data...</div>
+
+            <!-- Content (when loaded) -->
+            <div x-show="!allocationLoading">
+
+                <!-- Concentration Warnings (shown above charts if any exist) -->
+                <div x-show="concentrationWarnings.length > 0" class="concentration-warnings">
+                    <template x-for="warning in concentrationWarnings" :key="warning.type + (warning.name || '')">
+                        <div class="concentration-badge">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;flex-shrink:0;">
+                                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" stroke-linejoin="round"></path>
+                                <line x1="12" y1="9" x2="12" y2="13"></line>
+                                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                            </svg>
+                            <span>
+                                <strong x-text="warning.name"></strong>
+                                represents
+                                <strong x-text="warning.percentage.toFixed(1) + '%'"></strong>
+                                of portfolio
+                                <span style="color: var(--pico-muted-color);">
+                                    (threshold: <span x-text="warning.threshold + '%'"></span>)
+                                </span>
+                            </span>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Charts Row: Sector + Asset Class side by side -->
+                <div class="allocation-charts-row">
+                    <div class="portfolio-chart-card" x-show="sectorData.length > 0">
+                        <h4>Sector Breakdown</h4>
+                        <div class="portfolio-chart-wrapper">
+                            <canvas id="sector-allocation-chart"></canvas>
+                        </div>
+                    </div>
+                    <div class="portfolio-chart-card" x-show="assetClassData.length > 0">
+                        <h4>Asset Class Breakdown</h4>
+                        <div class="portfolio-chart-wrapper">
+                            <canvas id="asset-class-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Dividend Income Section -->
+                <div x-show="dividendIncome" class="dividend-income-section">
+                    <h4>Projected Annual Dividend Income</h4>
+
+                    <!-- Total Income Card -->
+                    <div class="income-total-card">
+                        <div class="income-total-amount" x-text="dividendIncome ? formatCurrency(dividendIncome.total_annual) : '$0.00'"></div>
+                        <div class="income-total-label">
+                            Estimated annual income from
+                            <span x-text="dividendIncome ? dividendIncome.dividend_stock_count : 0"></span>
+                            dividend-paying stocks
+                            <span x-show="dividendIncome && dividendIncome.total_stock_count > dividendIncome.dividend_stock_count" style="color: var(--pico-muted-color);">
+                                (of <span x-text="dividendIncome.total_stock_count"></span> total)
+                            </span>
+                        </div>
+                        <div class="income-monthly" x-show="dividendIncome && dividendIncome.total_annual > 0">
+                            ~<span x-text="dividendIncome ? formatCurrency(dividendIncome.total_annual / 12) : '$0.00'"></span>/month
+                        </div>
+                    </div>
+
+                    <!-- Income by Sector Table -->
+                    <div x-show="dividendIncome && dividendIncome.by_sector && dividendIncome.by_sector.length > 0">
+                        <h5 style="margin: 16px 0 8px;">Income by Sector</h5>
+                        <table class="income-sector-table">
+                            <thead>
+                                <tr>
+                                    <th>Sector</th>
+                                    <th style="text-align:right">Annual Income</th>
+                                    <th style="text-align:right">% of Income</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="item in dividendIncome.by_sector" :key="item.sector">
+                                    <tr>
+                                        <td x-text="item.sector"></td>
+                                        <td style="text-align:right" x-text="formatCurrency(item.annual_income)"></td>
+                                        <td style="text-align:right" x-text="item.percentage.toFixed(1) + '%'"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Income by Stock Table (collapsible) -->
+                    <details style="margin-top: 12px;">
+                        <summary style="cursor:pointer; color: var(--pico-primary); font-size: 0.9em;">
+                            View income by stock
+                        </summary>
+                        <table class="income-sector-table" style="margin-top: 8px;">
+                            <thead>
+                                <tr>
+                                    <th>Symbol</th>
+                                    <th style="text-align:right">Shares</th>
+                                    <th style="text-align:right">Div/Share</th>
+                                    <th style="text-align:right">Annual Income</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="stock in (dividendIncome ? dividendIncome.by_stock : [])" :key="stock.symbol">
+                                    <tr>
+                                        <td x-text="stock.symbol"></td>
+                                        <td style="text-align:right" x-text="parseFloat(stock.shares).toFixed(stock.shares % 1 ? 4 : 0)"></td>
+                                        <td style="text-align:right" x-text="'$' + parseFloat(stock.annual_dividend_per_share).toFixed(2)"></td>
+                                        <td style="text-align:right" x-text="formatCurrency(stock.annual_income)"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </details>
+
+                    <!-- Disclaimer -->
+                    <div class="return-disclaimer" style="margin-top: 12px;">
+                        Based on trailing 12-month dividend payments. Actual future dividends may differ. Does not account for dividend cuts, suspensions, or special dividends.
+                    </div>
+                </div>
+
+                <!-- Empty state if no data at all -->
+                <div x-show="!sectorData.length && !assetClassData.length && !dividendIncome"
+                     style="text-align: center; padding: 40px; color: var(--pico-muted-color);">
+                    No allocation data available. Make sure you have active holdings with current prices.
                 </div>
             </div>
         </div>
