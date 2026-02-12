@@ -118,10 +118,11 @@ Plans:
   3. User sees concentration warnings when position exceeds 25% or sector exceeds 40%
   4. User can view projected annual dividend income for entire portfolio
   5. User can view dividend income broken down by sector
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 11-01: TBD
+- [ ] 11-01-PLAN.md — Backend: sector allocation, asset class, concentration risk, and dividend income endpoints
+- [ ] 11-02-PLAN.md — Frontend: doughnut charts, concentration warnings, and income display
 
 #### Phase 12: Polish
 **Goal**: Batch entry, loading states, and UX refinements
@@ -152,7 +153,7 @@ Phases execute in numeric order: 8 → 9 → 10 → 11 → 12
 | 8. Refactoring | v1.2 | 2/2 | Complete | 2026-02-11 |
 | 9. Snapshots Foundation | v1.2 | 2/2 | Complete | 2026-02-11 |
 | 10. Historical Analytics | v1.2 | 2/2 | Complete | 2026-02-11 |
-| 11. Allocation & Risk | v1.2 | 0/0 | Not started | - |
+| 11. Allocation & Risk | v1.2 | 0/2 | Planning complete | - |
 | 12. Polish | v1.2 | 0/0 | Not started | - |
 
 **Overall:** 8 phases complete, 2 phases pending
@@ -160,4 +161,4 @@ Phases execute in numeric order: 8 → 9 → 10 → 11 → 12
 ---
 
 *Roadmap created: 2026-02-09*
-*Last updated: 2026-02-11 (Phase 10 complete)*
+*Last updated: 2026-02-11 (Phase 11 planned)*
