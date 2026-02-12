@@ -2231,7 +2231,11 @@ requireAuth();
                 <button aria-label="Close" rel="prev" @click="closeModal()"></button>
                 <h3 x-text="editingStock ? 'Edit Stock' : 'Add Stock'"></h3>
             </header>
-            <form @submit.prevent="saveStock()">
+            <div style="display: flex; gap: 8px; margin-bottom: 16px;" x-show="!editingStock">
+                <button type="button" class="secondary" :class="{ primary: !batchMode }" @click="batchMode = false; batchResult = null" style="flex: 1; padding: 8px;">Single</button>
+                <button type="button" class="secondary" :class="{ primary: batchMode }" @click="batchMode = true; batchResult = null" style="flex: 1; padding: 8px;">Batch</button>
+            </div>
+            <form @submit.prevent="saveStock()" x-show="!batchMode || editingStock">
                 <div class="watchlist-toggle">
                     <label>
                         <input type="checkbox" x-model="form.is_watchlist">
@@ -2287,6 +2291,52 @@ requireAuth();
                     </button>
                 </footer>
             </form>
+            <div x-show="batchMode && !editingStock">
+                <div x-show="!batchResult">
+                    <label>
+                        Stock Symbols
+                        <textarea x-model="batchInput" placeholder="AAPL&#10;MSFT&#10;GOOGL&#10;AMZN" rows="8" style="font-family: monospace;"></textarea>
+                        <small style="color: var(--pico-muted-color);">Enter one symbol per line. Max 50 symbols per batch.</small>
+                    </label>
+                    <label>
+                        Account (optional)
+                        <select x-model="batchAccountSelection">
+                            <option value="">-- Watchlist (no account) --</option>
+                            <template x-for="acc in uniqueAccounts" :key="acc">
+                                <option :value="acc" x-text="acc"></option>
+                            </template>
+                            <option value="__new__">+ Add New Account...</option>
+                        </select>
+                    </label>
+                    <div x-show="batchAccountSelection === '__new__'" x-collapse style="margin-top: 8px;">
+                        <input type="text" x-model="form.newAccountName" placeholder="Enter new account name (e.g., Fidelity 401k)">
+                    </div>
+                    <footer style="display: flex; gap: 8px; justify-content: flex-end;">
+                        <button type="button" class="secondary" @click="closeModal()">Cancel</button>
+                        <button type="button" @click="saveBatchStocks()" :disabled="batchSaving" :aria-busy="batchSaving">
+                            <span x-show="batchSaving" class="loading" style="width: 16px; height: 16px; margin-right: 8px;"></span>
+                            <span x-text="batchSaving ? 'Adding stocks...' : 'Add Stocks'"></span>
+                        </button>
+                    </footer>
+                </div>
+                <div x-show="batchResult">
+                    <div style="padding: 16px; text-align: center;">
+                        <div style="font-size: 1.2em; margin-bottom: 12px; color: var(--green);" x-show="batchResult?.created > 0">
+                            <strong x-text="batchResult?.created"></strong> stock(s) added successfully
+                        </div>
+                        <div style="margin-bottom: 8px; color: var(--pico-muted-color);" x-show="batchResult?.skipped?.length > 0">
+                            Skipped (already exist): <span x-text="batchResult?.skipped?.join(', ')"></span>
+                        </div>
+                        <div style="margin-bottom: 8px; color: var(--red);" x-show="batchResult?.errors?.length > 0">
+                            Errors: <span x-text="batchResult?.errors?.join(', ')"></span>
+                        </div>
+                    </div>
+                    <footer style="display: flex; gap: 8px; justify-content: flex-end;">
+                        <button type="button" @click="batchResult = null; batchInput = ''">Add More</button>
+                        <button type="button" class="secondary" @click="closeModal()">Done</button>
+                    </footer>
+                </div>
+            </div>
         </article>
     </dialog>
 
@@ -2490,6 +2540,13 @@ requireAuth();
                 saving: false,
                 deleting: false,
                 toasts: [],
+                // Batch mode state
+                batchMode: false,
+                batchInput: '',
+                batchAccount: '',
+                batchAccountSelection: '',
+                batchSaving: false,
+                batchResult: null,
                 form: {
                     symbol: '',
                     company_name: '',
@@ -2843,6 +2900,11 @@ requireAuth();
                         notes: '',
                         is_watchlist: false
                     };
+                    this.batchMode = false;
+                    this.batchInput = '';
+                    this.batchResult = null;
+                    this.batchAccount = '';
+                    this.batchAccountSelection = '';
                     this.showModal = true;
                 },
 
@@ -2905,6 +2967,57 @@ requireAuth();
                         this.showToast('Failed to save stock', 'error');
                     }
                     this.saving = false;
+                },
+
+                async saveBatchStocks() {
+                    // Parse symbols from textarea
+                    const lines = this.batchInput.split('\n')
+                        .map(s => s.trim().toUpperCase())
+                        .filter(s => s !== '');
+
+                    // Validate
+                    if (lines.length === 0) {
+                        this.showToast('Enter at least one symbol', 'error');
+                        return;
+                    }
+
+                    if (lines.length > 50) {
+                        this.showToast('Maximum 50 symbols per batch', 'error');
+                        return;
+                    }
+
+                    this.batchSaving = true;
+
+                    // Determine account
+                    let account = null;
+                    if (this.batchAccountSelection === '__new__') {
+                        account = this.form.newAccountName || null;
+                    } else if (this.batchAccountSelection !== '') {
+                        account = this.batchAccountSelection;
+                    }
+
+                    try {
+                        const res = await fetch('api.php?action=batchCreate', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                symbols: lines,
+                                account: account
+                            })
+                        });
+                        const data = await res.json();
+
+                        if (res.ok) {
+                            this.batchResult = data;
+                            await this.loadStocks();
+                        } else {
+                            this.showToast(data.error || 'Failed to add stocks', 'error');
+                        }
+                    } catch (e) {
+                        this.showToast('Failed to add stocks', 'error');
+                    }
+
+                    this.batchSaving = false;
                 },
 
                 confirmDelete(stock) {
