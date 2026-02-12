@@ -133,10 +133,11 @@ Plans:
   2. Loading indicators shown during historical backfill and sector enrichment
   3. Date range selector works for historical chart (1M, 3M, 6M, 1Y, All)
   4. Return calculations labeled clearly with explanations matching user expectations
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 12-01: TBD
+- [ ] 12-01-PLAN.md — Batch stock entry mode (backend endpoint + frontend modal)
+- [ ] 12-02-PLAN.md — Loading states, date range selector, and return disclaimer enhancements
 
 ## Progress
 
@@ -154,11 +155,11 @@ Phases execute in numeric order: 8 → 9 → 10 → 11 → 12
 | 9. Snapshots Foundation | v1.2 | 2/2 | Complete | 2026-02-11 |
 | 10. Historical Analytics | v1.2 | 2/2 | Complete | 2026-02-11 |
 | 11. Allocation & Risk | v1.2 | 2/2 | Complete | 2026-02-11 |
-| 12. Polish | v1.2 | 0/0 | Not started | - |
+| 12. Polish | v1.2 | 0/2 | Not started | - |
 
 **Overall:** 9 phases complete, 1 phase pending
 
 ---
 
 *Roadmap created: 2026-02-09*
-*Last updated: 2026-02-11 (Phase 11 complete)*
+*Last updated: 2026-02-11 (Phase 12 planned)*
