@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-11)
 
 **Core value:** Portfolio data stays current through simple CSV re-imports from brokers, with manual entry available for any stock — no API keys, no OAuth, no third-party dependencies.
-**Current focus:** Phase 10 in progress — Historical Analytics backend complete (plan 01), frontend next (plan 02)
+**Current focus:** Phase 10 complete — ready for Phase 11
 
 ## Current Position
 
 Phase: 10 of 12 (Historical Analytics)
-Plan: 1 of 2 in current phase
-Status: In Progress
-Last activity: 2026-02-11 — Completed plan 10-01
+Plan: 2 of 2 in current phase
+Status: Complete
+Last activity: 2026-02-11 — Completed plan 10-02
 
-Progress: [████████░░] 75% (9 of 12 phases complete)
+Progress: [████████░░] 83% (10 of 12 phases complete)
 
 ## Performance Metrics
 
 **Velocity (v1.0 + v1.1 + v1.2 combined):**
-- Total plans completed: 12
-- Average duration: 271 seconds
-- Total execution time: 1.21 hours
+- Total plans completed: 13
+- Average duration: 262 seconds
+- Total execution time: 1.32 hours
 
 **By Phase:**
 
@@ -34,14 +34,13 @@ Progress: [████████░░] 75% (9 of 12 phases complete)
 | 07-reimport-data-management | 1 | 1503s | 1503s |
 | 08-refactoring | 2 | 512s | 256s |
 | 09-snapshots-foundation | 2 | 207s | 103s |
-| 10-historical-analytics | 1 | 149s | 149s |
+| 10-historical-analytics | 2 | 509s | 254s |
 
 **Recent Trend:**
-- Phase 09 complete (2 of 2 plans, 207s total)
-- Phase 10 in progress (1 of 2 plans, 149s so far)
-- Trend: Improving
-| Phase 09-snapshots-foundation P02 | 1 min | 2 tasks | 3 files |
+- Phase 10 complete (2 of 2 plans, 509s total)
+- Trend: Stable
 | Phase 10-historical-analytics P01 | 2 min | 2 tasks | 3 files |
+| Phase 10-historical-analytics P02 | 6 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -58,10 +57,13 @@ Recent decisions affecting v1.2:
 - [Phase 09]: INTEGER timestamps for snapshot_date (3x faster sorting, efficient TTL math)
 - [Phase 09]: 100ms Yahoo Finance rate limiting (matches dividends.php pattern)
 - [Phase 09]: Fallback to purchase_price on Yahoo fetch failure (snapshot resilience)
-- [Phase 09-02]: 500ms rate limiting for sector fetches (more conservative than 100ms for price data) — Sector data fetched in bulk, quoteSummary endpoint needs more conservative delays
+- [Phase 09-02]: 500ms rate limiting for sector fetches (more conservative than 100ms for price data)
 - [Phase 10]: O(symbols) Yahoo calls not O(symbols*dates) - fetch all prices first, then calculate snapshots
 - [Phase 10]: ON CONFLICT DO NOTHING preserves real-time snapshots over backfilled historical data
 - [Phase 10]: YTD correctly uses January 1 of current year per standard financial definition
+- [Phase 10]: Chart.js instance stored outside Alpine scope to prevent memory leaks
+- [Phase 10]: Batch Yahoo spark endpoint for rankings instead of per-stock calls
+- [Phase 10]: Weekend price carry-forward (last known close, not purchase_price fallback)
 
 ### Pending Todos
 
@@ -72,7 +74,6 @@ None yet.
 **Research findings to validate during execution:**
 - Yahoo Finance rate limit threshold (research says 100-200 requests, needs real testing)
 - Sector data null rate (research says 20-30%, depends on stock universe)
-- Return calculation labeling (money-weighted vs time-weighted differences)
 
 ### Quick Tasks Completed
 
@@ -84,12 +85,12 @@ None yet.
 
 ## Session Continuity
 
-**Last session:** 2026-02-11T23:54:20.731Z
-**Stopped at:** Completed 10-01-PLAN.md
-**Next step:** Execute 10-02-PLAN.md (Frontend Charts & Analytics UI)
+**Last session:** 2026-02-11
+**Stopped at:** Phase 10 verified and complete
+**Next step:** Begin Phase 11 (Allocation & Risk)
 **Resume:** None
 
 ---
 
 *State initialized: 2026-02-09 (v1.0)*
-*Updated: 2026-02-11 (v1.2 roadmap created)*
+*Updated: 2026-02-11 (Phase 10 complete)*

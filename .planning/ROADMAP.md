@@ -92,7 +92,7 @@ Plans:
 - [x] 09-01-PLAN.md — Schema creation and daily snapshot generation endpoint
 - [x] 09-02-PLAN.md — Sector data fetching, caching, and rate limiting
 
-#### Phase 10: Historical Analytics
+#### Phase 10: Historical Analytics ✓
 **Goal**: Historical portfolio value chart and time-based return calculations
 **Depends on**: Phase 9
 **Requirements**: PERF-01, PERF-02, PERF-04, PERF-05
@@ -105,8 +105,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 10-01-PLAN.md — Backend: backfill, returns, and rankings API endpoints
-- [ ] 10-02-PLAN.md — Frontend: historical chart, returns display, rankings table, and UI
+- [x] 10-01-PLAN.md — Backend: backfill, returns, and rankings API endpoints
+- [x] 10-02-PLAN.md — Frontend: historical chart, returns display, rankings table, and UI
 
 #### Phase 11: Allocation & Risk
 **Goal**: Sector breakdown, asset class analysis, concentration warnings, and income projections
@@ -151,13 +151,13 @@ Phases execute in numeric order: 8 → 9 → 10 → 11 → 12
 | 7. Re-Import & Data Management | v1.1 | 1/1 | Complete | 2026-02-11 |
 | 8. Refactoring | v1.2 | 2/2 | Complete | 2026-02-11 |
 | 9. Snapshots Foundation | v1.2 | 2/2 | Complete | 2026-02-11 |
-| 10. Historical Analytics | v1.2 | 0/2 | In progress | - |
+| 10. Historical Analytics | v1.2 | 2/2 | Complete | 2026-02-11 |
 | 11. Allocation & Risk | v1.2 | 0/0 | Not started | - |
 | 12. Polish | v1.2 | 0/0 | Not started | - |
 
-**Overall:** 7 phases complete, 3 phases pending
+**Overall:** 8 phases complete, 2 phases pending
 
 ---
 
 *Roadmap created: 2026-02-09*
-*Last updated: 2026-02-11 (Phase 10 planned)*
+*Last updated: 2026-02-11 (Phase 10 complete)*
