@@ -2256,8 +2256,10 @@ requireAuth();
     </div>
 
     <script>
-        // Chart.js instance stored outside Alpine to prevent memory leaks
+        // Chart.js instances stored outside Alpine to prevent memory leaks
         let historicalChart = null;
+        let sectorAllocationChart = null;
+        let assetClassChart = null;
 
         function stockApp() {
             return {
@@ -2328,6 +2330,13 @@ requireAuth();
                 performanceRankings: [],
                 backfillStatus: null,
                 analyticsLoading: false,
+                // Allocation & Risk state
+                showAllocation: false,
+                allocationLoading: false,
+                sectorData: [],
+                assetClassData: [],
+                concentrationWarnings: [],
+                dividendIncome: null,
 
                 get isMarketOpen() {
                     const now = new Date();
@@ -3315,6 +3324,166 @@ requireAuth();
                         console.error('Backfill failed', e);
                         this.showToast('Backfill failed', 'error');
                     }
+                },
+
+                // Allocation & Risk Methods
+                async toggleAllocation() {
+                    this.showAllocation = !this.showAllocation;
+                    if (this.showAllocation) {
+                        this.$nextTick(() => {
+                            this.loadAllocationData();
+                        });
+                    } else {
+                        if (sectorAllocationChart) {
+                            sectorAllocationChart.destroy();
+                            sectorAllocationChart = null;
+                        }
+                        if (assetClassChart) {
+                            assetClassChart.destroy();
+                            assetClassChart = null;
+                        }
+                    }
+                },
+
+                async loadAllocationData() {
+                    this.allocationLoading = true;
+                    try {
+                        const [sectorRes, assetClassRes, concentrationRes, dividendRes] = await Promise.all([
+                            fetch('api.php?action=sectorAllocation'),
+                            fetch('api.php?action=assetClassAllocation'),
+                            fetch('api.php?action=concentrationRisk'),
+                            fetch('api.php?action=dividendIncome')
+                        ]);
+
+                        const sectorData = await sectorRes.json();
+                        this.sectorData = sectorData.sectors || [];
+
+                        const assetClassData = await assetClassRes.json();
+                        this.assetClassData = assetClassData.asset_classes || [];
+
+                        const concentrationData = await concentrationRes.json();
+                        this.concentrationWarnings = concentrationData.warnings || [];
+
+                        const dividendData = await dividendRes.json();
+                        this.dividendIncome = dividendData;
+
+                        this.$nextTick(() => {
+                            this.renderSectorChart();
+                            this.renderAssetClassChart();
+                        });
+                    } catch (e) {
+                        console.error('Failed to load allocation data', e);
+                        this.showToast('Failed to load allocation data', 'error');
+                    }
+                    this.allocationLoading = false;
+                },
+
+                renderSectorChart() {
+                    if (sectorAllocationChart) {
+                        sectorAllocationChart.destroy();
+                        sectorAllocationChart = null;
+                    }
+
+                    const canvas = document.getElementById('sector-allocation-chart');
+                    if (!canvas || !this.sectorData.length) return;
+
+                    const colors = ['#58a6ff', '#3fb950', '#f85149', '#a371f7', '#f0883e', '#56d4dd', '#db61a2', '#7ee787', '#79c0ff', '#ffa657'];
+                    const labels = this.sectorData.map(s => s.sector + ' ' + s.percentage.toFixed(1) + '%');
+                    const data = this.sectorData.map(s => s.value);
+
+                    sectorAllocationChart = new Chart(canvas, {
+                        type: 'doughnut',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                data: data,
+                                backgroundColor: colors,
+                                borderWidth: 0
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    position: 'right',
+                                    labels: {
+                                        color: '#8b949e',
+                                        font: { size: 11 },
+                                        boxWidth: 12,
+                                        padding: 8
+                                    }
+                                },
+                                tooltip: {
+                                    backgroundColor: 'rgba(22,27,34,0.9)',
+                                    titleColor: '#e6edf3',
+                                    bodyColor: '#e6edf3',
+                                    callbacks: {
+                                        label: (context) => {
+                                            const sector = this.sectorData[context.dataIndex];
+                                            return sector.sector + ': $' + sector.value.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' (' + sector.percentage.toFixed(1) + '%)';
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
+                },
+
+                renderAssetClassChart() {
+                    if (assetClassChart) {
+                        assetClassChart.destroy();
+                        assetClassChart = null;
+                    }
+
+                    const canvas = document.getElementById('asset-class-chart');
+                    if (!canvas || !this.assetClassData.length) return;
+
+                    const colors = ['#58a6ff', '#3fb950', '#f85149', '#a371f7', '#f0883e', '#56d4dd', '#db61a2', '#7ee787', '#79c0ff', '#ffa657'];
+                    const labels = this.assetClassData.map(a => a.asset_class + ' ' + a.percentage.toFixed(1) + '%');
+                    const data = this.assetClassData.map(a => a.value);
+
+                    assetClassChart = new Chart(canvas, {
+                        type: 'doughnut',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                data: data,
+                                backgroundColor: colors,
+                                borderWidth: 0
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    position: 'right',
+                                    labels: {
+                                        color: '#8b949e',
+                                        font: { size: 11 },
+                                        boxWidth: 12,
+                                        padding: 8
+                                    }
+                                },
+                                tooltip: {
+                                    backgroundColor: 'rgba(22,27,34,0.9)',
+                                    titleColor: '#e6edf3',
+                                    bodyColor: '#e6edf3',
+                                    callbacks: {
+                                        label: (context) => {
+                                            const assetClass = this.assetClassData[context.dataIndex];
+                                            return assetClass.asset_class + ': $' + assetClass.value.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' (' + assetClass.percentage.toFixed(1) + '%)';
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
+                },
+
+                formatCurrency(value) {
+                    return '$' + value.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
                 },
 
                 // Dividend Methods
