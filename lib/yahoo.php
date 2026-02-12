@@ -111,3 +111,38 @@ function fetchSectorData(string $symbol): array {
 
     return ['sector' => $sector, 'industry' => $industry, 'error' => false];
 }
+
+/**
+ * Fetch asset type (quoteType) from Yahoo Finance quoteSummary endpoint
+ *
+ * @param string $symbol Stock symbol to fetch asset type for
+ * @return array{quote_type: ?string, error: bool}
+ */
+function fetchAssetType(string $symbol): array {
+    // Build quoteSummary URL for quoteType module
+    $url = "https://query1.finance.yahoo.com/v11/finance/quoteSummary/" . urlencode($symbol) . "?modules=quoteType";
+
+    // Create Yahoo Finance context
+    $context = yahooContext();
+
+    // Fetch data
+    $response = @file_get_contents($url, false, $context);
+
+    // Handle fetch failure
+    if ($response === false) {
+        return ['quote_type' => null, 'error' => true];
+    }
+
+    // Decode JSON response
+    $data = json_decode($response, true);
+
+    // Extract quoteType
+    $quoteType = $data['quoteSummary']['result'][0]['quoteType']['quoteType'] ?? null;
+
+    // Handle missing quoteType
+    if ($quoteType === null) {
+        return ['quote_type' => null, 'error' => true];
+    }
+
+    return ['quote_type' => $quoteType, 'error' => false];
+}

@@ -143,6 +143,19 @@ function getDatabase(): PDO {
         $pdo->exec("CREATE INDEX IF NOT EXISTS idx_sector_symbol ON sector_cache(symbol)");
         $pdo->exec("CREATE INDEX IF NOT EXISTS idx_sector_cached_at ON sector_cache(cached_at)");
 
+        // Create asset_type_cache table for Yahoo Finance quoteType caching
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS asset_type_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol VARCHAR(10) NOT NULL,
+                quote_type VARCHAR(30),
+                cached_at INTEGER NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ");
+        $pdo->exec("CREATE INDEX IF NOT EXISTS idx_asset_type_symbol ON asset_type_cache(symbol)");
+        $pdo->exec("CREATE INDEX IF NOT EXISTS idx_asset_type_cached_at ON asset_type_cache(cached_at)");
+
         // Drop SnapTrade tables (one-time migration)
         $pdo->exec("DROP TABLE IF EXISTS connections");
         $pdo->exec("DROP TABLE IF EXISTS positions");
