@@ -4,7 +4,7 @@
 
 - ✅ **v1.0 Security & SDK Foundation** - Phases 1-2 (partial, pivoted 2026-02-10)
 - ✅ **v1.1 CSV Portfolio Import** - Phases 5-7 (shipped 2026-02-11)
-- 🚧 **v1.2 Analytics & Manual Entry** - Phases 8-12 (in progress)
+- ✅ **v1.2 Analytics & Manual Entry** - Phases 8-12 (shipped 2026-02-12)
 
 ## Phases
 
@@ -57,7 +57,8 @@ Plans:
 
 </details>
 
-### 🚧 v1.2 Analytics & Manual Entry (In Progress)
+<details>
+<summary>✅ v1.2 Analytics & Manual Entry (Phases 8-12) - SHIPPED 2026-02-12</summary>
 
 **Milestone Goal:** Add portfolio analytics (performance tracking, allocation insights, income projections) and batch manual entry.
 
@@ -138,6 +139,8 @@ Plans:
 Plans:
 - [x] 12-01-PLAN.md — Batch stock entry mode (backend endpoint + frontend modal)
 - [x] 12-02-PLAN.md — Loading states, date range selector, and return disclaimer enhancements
+
+</details>
 
 ## Progress
 

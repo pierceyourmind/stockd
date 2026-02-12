@@ -5,7 +5,7 @@
 See: .planning/PROJECT.md (updated 2026-02-11)
 
 **Core value:** Portfolio data stays current through simple CSV re-imports from brokers, with manual entry available for any stock — no API keys, no OAuth, no third-party dependencies.
-**Current focus:** Phase 11 complete — Phase 12 (Polish) in progress
+**Current focus:** v1.2 milestone complete — all 12 phases shipped
 
 ## Current Position
 
