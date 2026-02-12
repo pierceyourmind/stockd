@@ -60,5 +60,9 @@ match ($action) {
     'backfill' => backfillSnapshots($pdo),
     'returns' => getReturns($pdo),
     'rankings' => getPerformanceRankings($pdo),
+    'sectorAllocation' => getSectorAllocation($pdo),
+    'assetClassAllocation' => getAssetClassAllocation($pdo),
+    'concentrationRisk' => getConcentrationRisk($pdo),
+    'dividendIncome' => getDividendIncome($pdo),
     default => jsonResponse(['error' => 'Invalid action'], 400),
 };

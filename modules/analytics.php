@@ -496,3 +496,496 @@ function getPerformanceRankings(PDO $pdo): never {
 
     jsonResponse(['rankings' => $rankings]);
 }
+
+/**
+ * Helper: Get active holdings with current prices from Yahoo Finance
+ * Shared by sectorAllocation, assetClassAllocation, and concentrationRisk
+ *
+ * @return array{holdings: array, prices: array, total_value: float}
+ */
+function getHoldingsWithPrices(PDO $pdo): array {
+    // Get all active holdings aggregated by symbol
+    $stmt = $pdo->query("
+        SELECT symbol, SUM(shares) as total_shares
+        FROM stocks
+        WHERE is_watchlist = 0
+          AND removed_flag = 0
+          AND shares > 0
+        GROUP BY symbol
+    ");
+    $holdings = $stmt->fetchAll();
+
+    if (empty($holdings)) {
+        return ['holdings' => [], 'prices' => [], 'total_value' => 0.0];
+    }
+
+    // Batch fetch current prices using Yahoo spark endpoint
+    $symbols = array_column($holdings, 'symbol');
+    $symbolList = implode(',', array_map('urlencode', $symbols));
+    $url = "https://query1.finance.yahoo.com/v8/finance/spark?symbols={$symbolList}&range=1d&interval=1d";
+    $context = yahooContext(30);
+    $response = @file_get_contents($url, false, $context);
+
+    $prices = [];
+    if ($response !== false) {
+        $data = json_decode($response, true);
+        foreach ($symbols as $symbol) {
+            $closes = $data[$symbol]['close'] ?? null;
+            if ($closes && is_array($closes)) {
+                $lastClose = end($closes);
+                if ($lastClose !== null && $lastClose > 0) {
+                    $prices[$symbol] = (float) $lastClose;
+                }
+            }
+        }
+    }
+
+    // Calculate total portfolio value
+    $totalValue = 0.0;
+    foreach ($holdings as $holding) {
+        $symbol = $holding['symbol'];
+        $shares = (float) $holding['total_shares'];
+        $price = $prices[$symbol] ?? 0;
+        $totalValue += $shares * $price;
+    }
+
+    return [
+        'holdings' => $holdings,
+        'prices' => $prices,
+        'total_value' => $totalValue
+    ];
+}
+
+/**
+ * Get sector allocation breakdown with percentages
+ * Returns sectors grouped by value and percentage
+ */
+function getSectorAllocation(PDO $pdo): never {
+    // Get holdings and current prices
+    $data = getHoldingsWithPrices($pdo);
+    $holdings = $data['holdings'];
+    $prices = $data['prices'];
+    $totalValue = $data['total_value'];
+
+    if ($totalValue == 0) {
+        jsonResponse(['sectors' => [], 'total_value' => 0]);
+    }
+
+    // Get sector cache with 30-day TTL
+    $thirtyDaysAgo = time() - (30 * 24 * 60 * 60);
+    $stmt = $pdo->prepare("
+        SELECT symbol, sector
+        FROM sector_cache
+        WHERE cached_at > ?
+        ORDER BY cached_at DESC
+    ");
+    $stmt->execute([$thirtyDaysAgo]);
+    $cacheEntries = $stmt->fetchAll();
+
+    // Deduplicate sector cache by symbol (take latest)
+    $sectorMap = [];
+    foreach ($cacheEntries as $entry) {
+        $symbol = $entry['symbol'];
+        if (!isset($sectorMap[$symbol])) {
+            $sectorMap[$symbol] = $entry['sector'];
+        }
+    }
+
+    // Get asset type cache to filter out ETFs from sector chart
+    $stmt = $pdo->prepare("
+        SELECT symbol, quote_type
+        FROM asset_type_cache
+        WHERE cached_at > ?
+        ORDER BY cached_at DESC
+    ");
+    $stmt->execute([$thirtyDaysAgo]);
+    $assetTypeEntries = $stmt->fetchAll();
+
+    // Deduplicate asset type cache by symbol (take latest)
+    $assetTypeMap = [];
+    foreach ($assetTypeEntries as $entry) {
+        $symbol = $entry['symbol'];
+        if (!isset($assetTypeMap[$symbol])) {
+            $assetTypeMap[$symbol] = $entry['quote_type'];
+        }
+    }
+
+    // Calculate sector allocation (EQUITY only, exclude ETFs)
+    $sectorValues = [];
+    foreach ($holdings as $holding) {
+        $symbol = $holding['symbol'];
+        $shares = (float) $holding['total_shares'];
+        $price = $prices[$symbol] ?? 0;
+
+        if ($price <= 0) {
+            continue;
+        }
+
+        // Filter to EQUITY only (exclude ETFs from sector chart)
+        $assetType = $assetTypeMap[$symbol] ?? null;
+        if ($assetType && $assetType !== 'EQUITY') {
+            continue; // Skip ETFs, mutual funds, etc
+        }
+
+        $sector = $sectorMap[$symbol] ?? 'Unknown';
+        $value = $shares * $price;
+
+        if (!isset($sectorValues[$sector])) {
+            $sectorValues[$sector] = 0.0;
+        }
+        $sectorValues[$sector] += $value;
+    }
+
+    // Build sectors array with percentages
+    $sectors = [];
+    foreach ($sectorValues as $sector => $value) {
+        $percentage = round((100.0 * $value) / $totalValue, 2);
+        $sectors[] = [
+            'sector' => $sector,
+            'value' => round($value, 2),
+            'percentage' => $percentage
+        ];
+    }
+
+    // Sort by value descending
+    usort($sectors, function($a, $b) {
+        return $b['value'] <=> $a['value'];
+    });
+
+    jsonResponse(['sectors' => $sectors, 'total_value' => round($totalValue, 2)]);
+}
+
+/**
+ * Get asset class allocation breakdown (Stocks/ETFs/Mutual Funds/Other)
+ * Uses Yahoo Finance quoteType with caching
+ */
+function getAssetClassAllocation(PDO $pdo): never {
+    // Get holdings and current prices
+    $data = getHoldingsWithPrices($pdo);
+    $holdings = $data['holdings'];
+    $prices = $data['prices'];
+    $totalValue = $data['total_value'];
+
+    if ($totalValue == 0) {
+        jsonResponse(['asset_classes' => [], 'total_value' => 0]);
+    }
+
+    // Get asset type cache with 30-day TTL
+    $thirtyDaysAgo = time() - (30 * 24 * 60 * 60);
+    $stmt = $pdo->prepare("
+        SELECT symbol, quote_type
+        FROM asset_type_cache
+        WHERE cached_at > ?
+        ORDER BY cached_at DESC
+    ");
+    $stmt->execute([$thirtyDaysAgo]);
+    $cacheEntries = $stmt->fetchAll();
+
+    // Deduplicate cache by symbol (take latest)
+    $assetTypeMap = [];
+    foreach ($cacheEntries as $entry) {
+        $symbol = $entry['symbol'];
+        if (!isset($assetTypeMap[$symbol])) {
+            $assetTypeMap[$symbol] = $entry['quote_type'];
+        }
+    }
+
+    // Calculate asset class allocation
+    $assetClassValues = [];
+    foreach ($holdings as $holding) {
+        $symbol = $holding['symbol'];
+        $shares = (float) $holding['total_shares'];
+        $price = $prices[$symbol] ?? 0;
+
+        if ($price <= 0) {
+            continue;
+        }
+
+        // Check cache, fetch if missing
+        $quoteType = $assetTypeMap[$symbol] ?? null;
+
+        if ($quoteType === null) {
+            // Cache miss - fetch from Yahoo
+            $result = fetchAssetType($symbol);
+
+            if (!$result['error']) {
+                $quoteType = $result['quote_type'];
+
+                // Store in cache
+                $stmt = $pdo->prepare("
+                    INSERT INTO asset_type_cache (symbol, quote_type, cached_at)
+                    VALUES (?, ?, ?)
+                ");
+                $stmt->execute([$symbol, $quoteType, time()]);
+
+                // Rate limiting: 500ms delay after Yahoo fetch
+                usleep(500000);
+            }
+        }
+
+        // Map quoteType to display name
+        $assetClass = match($quoteType) {
+            'EQUITY' => 'Stocks',
+            'ETF' => 'ETFs',
+            'MUTUALFUND' => 'Mutual Funds',
+            default => 'Other'
+        };
+
+        $value = $shares * $price;
+
+        if (!isset($assetClassValues[$assetClass])) {
+            $assetClassValues[$assetClass] = 0.0;
+        }
+        $assetClassValues[$assetClass] += $value;
+    }
+
+    // Build asset classes array with percentages
+    $assetClasses = [];
+    foreach ($assetClassValues as $assetClass => $value) {
+        $percentage = round((100.0 * $value) / $totalValue, 2);
+        $assetClasses[] = [
+            'asset_class' => $assetClass,
+            'value' => round($value, 2),
+            'percentage' => $percentage
+        ];
+    }
+
+    // Sort by value descending
+    usort($assetClasses, function($a, $b) {
+        return $b['value'] <=> $a['value'];
+    });
+
+    jsonResponse(['asset_classes' => $assetClasses, 'total_value' => round($totalValue, 2)]);
+}
+
+/**
+ * Get concentration risk warnings (positions >25%, sectors >40%)
+ * Flags risky portfolio concentrations
+ */
+function getConcentrationRisk(PDO $pdo): never {
+    // Get holdings and current prices
+    $data = getHoldingsWithPrices($pdo);
+    $holdings = $data['holdings'];
+    $prices = $data['prices'];
+    $totalValue = $data['total_value'];
+
+    if ($totalValue == 0) {
+        jsonResponse(['warnings' => [], 'total_value' => 0]);
+    }
+
+    // Get sector cache with 30-day TTL
+    $thirtyDaysAgo = time() - (30 * 24 * 60 * 60);
+    $stmt = $pdo->prepare("
+        SELECT symbol, sector
+        FROM sector_cache
+        WHERE cached_at > ?
+        ORDER BY cached_at DESC
+    ");
+    $stmt->execute([$thirtyDaysAgo]);
+    $cacheEntries = $stmt->fetchAll();
+
+    // Deduplicate sector cache by symbol (take latest)
+    $sectorMap = [];
+    foreach ($cacheEntries as $entry) {
+        $symbol = $entry['symbol'];
+        if (!isset($sectorMap[$symbol])) {
+            $sectorMap[$symbol] = $entry['sector'];
+        }
+    }
+
+    $warnings = [];
+    $sectorValues = [];
+
+    // Check position concentration (>25%)
+    foreach ($holdings as $holding) {
+        $symbol = $holding['symbol'];
+        $shares = (float) $holding['total_shares'];
+        $price = $prices[$symbol] ?? 0;
+
+        if ($price <= 0) {
+            continue;
+        }
+
+        $positionValue = $shares * $price;
+        $percentage = ($positionValue / $totalValue) * 100;
+
+        // Check position threshold
+        if ($percentage > 25) {
+            $warnings[] = [
+                'type' => 'position',
+                'name' => $symbol,
+                'value' => round($positionValue, 2),
+                'percentage' => round($percentage, 2),
+                'threshold' => 25
+            ];
+        }
+
+        // Accumulate sector values for sector concentration check
+        $sector = $sectorMap[$symbol] ?? 'Unknown';
+        if (!isset($sectorValues[$sector])) {
+            $sectorValues[$sector] = 0.0;
+        }
+        $sectorValues[$sector] += $positionValue;
+    }
+
+    // Check sector concentration (>40%)
+    foreach ($sectorValues as $sector => $value) {
+        $percentage = ($value / $totalValue) * 100;
+
+        if ($percentage > 40) {
+            $warnings[] = [
+                'type' => 'sector',
+                'name' => $sector,
+                'value' => round($value, 2),
+                'percentage' => round($percentage, 2),
+                'threshold' => 40
+            ];
+        }
+    }
+
+    jsonResponse(['warnings' => $warnings, 'total_value' => round($totalValue, 2)]);
+}
+
+/**
+ * Get projected dividend income breakdown by sector and stock
+ * Uses trailing 12-month dividend sum from Yahoo Finance
+ */
+function getDividendIncome(PDO $pdo): never {
+    // Get all active holdings
+    $stmt = $pdo->query("
+        SELECT symbol, company_name, SUM(shares) as total_shares
+        FROM stocks
+        WHERE is_watchlist = 0
+          AND removed_flag = 0
+          AND shares > 0
+        GROUP BY symbol
+    ");
+    $holdings = $stmt->fetchAll();
+
+    if (empty($holdings)) {
+        jsonResponse([
+            'total_annual' => 0,
+            'by_sector' => [],
+            'by_stock' => [],
+            'dividend_stock_count' => 0,
+            'total_stock_count' => 0
+        ]);
+    }
+
+    // Get sector cache with 30-day TTL
+    $thirtyDaysAgo = time() - (30 * 24 * 60 * 60);
+    $stmt = $pdo->prepare("
+        SELECT symbol, sector
+        FROM sector_cache
+        WHERE cached_at > ?
+        ORDER BY cached_at DESC
+    ");
+    $stmt->execute([$thirtyDaysAgo]);
+    $cacheEntries = $stmt->fetchAll();
+
+    // Deduplicate sector cache
+    $sectorMap = [];
+    foreach ($cacheEntries as $entry) {
+        $symbol = $entry['symbol'];
+        if (!isset($sectorMap[$symbol])) {
+            $sectorMap[$symbol] = $entry['sector'];
+        }
+    }
+
+    $context = yahooContext();
+    $totalAnnual = 0.0;
+    $bySector = [];
+    $byStock = [];
+    $dividendStockCount = 0;
+
+    // Fetch dividend data for each holding
+    foreach ($holdings as $holding) {
+        $symbol = $holding['symbol'];
+        $companyName = $holding['company_name'];
+        $shares = (float) $holding['total_shares'];
+
+        // Fetch trailing 12-month dividends from Yahoo Finance
+        $url = "https://query1.finance.yahoo.com/v8/finance/chart/" . urlencode($symbol) . "?interval=1d&range=1y&events=div";
+        $response = @file_get_contents($url, false, $context);
+
+        if ($response === false) {
+            usleep(100000); // Rate limit even on failure
+            continue;
+        }
+
+        $data = json_decode($response, true);
+        $divEvents = $data['chart']['result'][0]['events']['dividends'] ?? [];
+
+        if (empty($divEvents)) {
+            usleep(100000);
+            continue; // No dividends for this stock
+        }
+
+        // Sum trailing 12-month dividends
+        $oneYearAgo = strtotime('-1 year');
+        $annualDividendPerShare = 0.0;
+
+        foreach ($divEvents as $ts => $div) {
+            if ((int) $ts >= $oneYearAgo) {
+                $annualDividendPerShare += (float) $div['amount'];
+            }
+        }
+
+        if ($annualDividendPerShare <= 0) {
+            usleep(100000);
+            continue; // No recent dividends
+        }
+
+        // Calculate annual income for this holding
+        $annualIncome = $shares * $annualDividendPerShare;
+        $totalAnnual += $annualIncome;
+        $dividendStockCount++;
+
+        // Add to by-stock array
+        $byStock[] = [
+            'symbol' => $symbol,
+            'company_name' => $companyName,
+            'shares' => $shares,
+            'annual_dividend_per_share' => round($annualDividendPerShare, 4),
+            'annual_income' => round($annualIncome, 2)
+        ];
+
+        // Accumulate by sector
+        $sector = $sectorMap[$symbol] ?? 'Unknown';
+        if (!isset($bySector[$sector])) {
+            $bySector[$sector] = 0.0;
+        }
+        $bySector[$sector] += $annualIncome;
+
+        // Rate limiting: 100ms between requests
+        usleep(100000);
+    }
+
+    // Build by-sector array with percentages
+    $bySectorArray = [];
+    foreach ($bySector as $sector => $income) {
+        $percentage = $totalAnnual > 0 ? round((100.0 * $income) / $totalAnnual, 2) : 0;
+        $bySectorArray[] = [
+            'sector' => $sector,
+            'annual_income' => round($income, 2),
+            'percentage' => $percentage
+        ];
+    }
+
+    // Sort by income descending
+    usort($bySectorArray, function($a, $b) {
+        return $b['annual_income'] <=> $a['annual_income'];
+    });
+
+    usort($byStock, function($a, $b) {
+        return $b['annual_income'] <=> $a['annual_income'];
+    });
+
+    jsonResponse([
+        'total_annual' => round($totalAnnual, 2),
+        'by_sector' => $bySectorArray,
+        'by_stock' => $byStock,
+        'dividend_stock_count' => $dividendStockCount,
+        'total_stock_count' => count($holdings)
+    ]);
+}
