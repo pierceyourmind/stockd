@@ -4,8 +4,8 @@
 
 ```bash
 cd /home/rob/projects/stockd
-php -S localhost:8080
-# Open http://localhost:8080
+sudo php -S 0.0.0.0:80
+# Open http://localhost
 ```
 
 ## Technology Stack

@@ -2,9 +2,12 @@
 declare(strict_types=1);
 
 // Start session with secure cookie configuration
+$isSecure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+    || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
+
 session_start([
     'cookie_lifetime' => 0,
-    'cookie_secure' => true,
+    'cookie_secure' => $isSecure,
     'cookie_httponly' => true,
     'cookie_samesite' => 'Lax',
     'cookie_path' => '/',
