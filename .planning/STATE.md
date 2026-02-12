@@ -2,19 +2,19 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-11)
+See: .planning/PROJECT.md (updated 2026-02-12)
 
 **Core value:** Portfolio data stays current through simple CSV re-imports from brokers, with manual entry available for any stock — no API keys, no OAuth, no third-party dependencies.
-**Current focus:** v1.2 milestone complete — all 12 phases shipped
+**Current focus:** v1.2 shipped — planning next milestone
 
 ## Current Position
 
-Phase: 12 of 12 (Polish)
-Plan: 2 of 2 in current phase (Phase Complete - ALL PHASES COMPLETE)
-Status: Complete
-Last activity: 2026-02-12 — Completed plan 12-02
+Phase: 12 of 12 (all milestones complete)
+Plan: N/A
+Status: Between milestones
+Last activity: 2026-02-12 — v1.2 milestone archived
 
-Progress: [██████████] 100% (12 of 12 phases complete)
+Progress: [██████████] 100% (v1.0 + v1.1 + v1.2 complete)
 
 ## Performance Metrics
 
@@ -38,56 +38,20 @@ Progress: [██████████] 100% (12 of 12 phases complete)
 | 11-allocation-risk | 2 | 309s | 154s |
 | 12-polish | 2 | 337s | 168s |
 
-**Recent Trend:**
-- Phase 12 complete (2 of 2 plans, 337s total)
-- Trend: Excellent
-| Phase 11 P01 | 158s | 2 tasks | 4 files |
-| Phase 11 P02 | 151s | 2 tasks | 1 file |
-| Phase 12 P01 | 209s | 2 tasks | 3 files |
-| Phase 12 P02 | 128s | 2 tasks | 2 files |
-
 ## Accumulated Context
 
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting v1.2:
-
-- Phase 1: SnapTrade abandoned, pivoted to CSV import (core strategy)
-- Phase 5-7: Auto-detect broker format, upsert by symbol+account, flag removed stocks
-- v1.2 planning: Refactor first to prevent monolithic complexity explosion (4,100 → 8,000+ lines)
-- [Phase 08]: Organized endpoints into 6 domain modules plus analytics placeholder
-- [Phase 08]: Reduced api.php from 926 to 57 lines (94% reduction) creating pure router
-- [Phase 09]: INTEGER timestamps for snapshot_date (3x faster sorting, efficient TTL math)
-- [Phase 09]: 100ms Yahoo Finance rate limiting (matches dividends.php pattern)
-- [Phase 09]: Fallback to purchase_price on Yahoo fetch failure (snapshot resilience)
-- [Phase 09-02]: 500ms rate limiting for sector fetches (more conservative than 100ms for price data)
-- [Phase 10]: O(symbols) Yahoo calls not O(symbols*dates) - fetch all prices first, then calculate snapshots
-- [Phase 10]: ON CONFLICT DO NOTHING preserves real-time snapshots over backfilled historical data
-- [Phase 10]: YTD correctly uses January 1 of current year per standard financial definition
-- [Phase 10]: Chart.js instance stored outside Alpine scope to prevent memory leaks
-- [Phase 10]: Batch Yahoo spark endpoint for rankings instead of per-stock calls
-- [Phase 10]: Weekend price carry-forward (last known close, not purchase_price fallback)
-- [Phase 11]: ETFs excluded from sector allocation chart (belong in asset class chart)
-- [Phase 11]: Dividend income uses trailing 12-month sum (more accurate than yield calculation)
-- [Phase 11]: Asset type caching with 30-day TTL to minimize Yahoo API calls
-- [Phase 12-01]: Batch entry uses quoteSummary/price endpoint for company names (has shortName/longName)
-- [Phase 12-01]: 50 symbol batch limit (prevents abuse, reasonable UX constraint)
-- [Phase 12-01]: Duplicate check across ALL accounts (not per-account, avoids confusion)
-- [Phase 12-01]: Partial success model for batch operations (created/skipped/errors breakdown)
-- [Phase 12-02]: Date ranges 1M/3M/6M/1Y/All (removed 1W and YTD for more useful historical views)
-- [Phase 12-02]: Dynamic Chart.js time units based on date range (day/week/month)
-- [Phase 12-02]: Enhanced disclaimer explains 2-4% annual dividend impact and TWR/MWR differences
+All v1.0-v1.2 decisions archived with milestone completion.
 
 ### Pending Todos
 
-None yet.
+None.
 
 ### Blockers/Concerns
 
-**Research findings to validate during execution:**
-- Yahoo Finance rate limit threshold (research says 100-200 requests, needs real testing)
-- Sector data null rate (research says 20-30%, depends on stock universe)
+None — between milestones.
 
 ### Quick Tasks Completed
 
@@ -99,12 +63,12 @@ None yet.
 
 ## Session Continuity
 
-**Last session:** 2026-02-12T05:01:20Z
-**Stopped at:** Completed 12-02-PLAN.md (Phase 12 Complete - ALL PHASES COMPLETE)
-**Next step:** Project v1.2 complete - ready for deployment
+**Last session:** 2026-02-12
+**Stopped at:** v1.2 milestone archived
+**Next step:** `/gsd:new-milestone` to plan next version
 **Resume:** None
 
 ---
 
 *State initialized: 2026-02-09 (v1.0)*
-*Updated: 2026-02-12 (Phase 12 complete - v1.2 finished)*
+*Updated: 2026-02-12 (v1.2 milestone complete)*

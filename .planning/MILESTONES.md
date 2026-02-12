@@ -58,3 +58,32 @@
 
 ---
 
+
+## v1.2 — Analytics & Manual Entry (Shipped: 2026-02-12)
+
+**Phases:** 8-12 (5 phases, 10 plans)
+**Timeline:** 1 day (2026-02-11 → 2026-02-12)
+**Requirements:** 18/18 delivered
+**Git range:** 798defc..0efbe05 (16 feature commits)
+**Codebase:** 6,837 LOC PHP (+8,874 / -922 lines changed)
+
+**Delivered:** Portfolio analytics with historical performance charts, sector/asset allocation breakdowns, concentration risk warnings, dividend income projections, and batch stock entry — all built on a modular codebase refactored from a monolithic API.
+
+**Key accomplishments:**
+1. Refactored monolithic api.php (926→57 lines) into 6 domain modules + 4 shared libs
+2. Built portfolio snapshots infrastructure with daily auto-generation from Yahoo Finance
+3. Historical portfolio value chart with 90-day backfill, date range selector, and time-based returns
+4. Sector/asset class allocation doughnut charts with concentration risk warnings
+5. Projected dividend income by portfolio and sector breakdown
+6. Batch stock entry (up to 50 symbols at once) with auto company name lookup
+
+**Key decisions:**
+- Refactor first to prevent monolithic complexity (4,100 → 8,000+ LOC without modularization)
+- INTEGER timestamps for snapshot_date (3x faster sorting)
+- O(symbols) Yahoo calls not O(symbols*dates) for efficient historical backfill
+- ETFs excluded from sector allocation (belong in asset class chart)
+- Trailing 12-month dividend sum (more accurate than yield calculation)
+- Batch entry with partial success model (created/skipped/errors breakdown)
+
+---
+

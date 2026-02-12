@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A personal stock portfolio tracker that imports holdings from Fidelity and Schwab via CSV/TSV file upload. Built as a PHP/Alpine.js web app running locally. Shows real-time quotes, gain/loss calculations from imported cost basis, charts, alerts, and benchmarks — combining imported brokerage data with manually entered stocks.
+A personal stock portfolio tracker with analytics. Imports holdings from Fidelity and Schwab via CSV/TSV upload, provides historical performance charts, sector/asset allocation analysis, concentration risk warnings, and dividend income projections. Built as a modular PHP/Alpine.js web app running locally — combining imported brokerage data with batch manual entry.
 
 ## Core Value
 
@@ -40,24 +40,27 @@ Portfolio data stays current through simple CSV re-imports from brokers, with ma
 - ✓ Manual cost basis entry/editing — v1.1
 - ✓ SnapTrade code fully removed — v1.1
 
+- ✓ API refactored into modular structure (6 domain modules + 4 shared libs) — v1.2
+- ✓ Daily portfolio snapshots with auto-generation on page load — v1.2
+- ✓ Historical portfolio value chart with 90-day backfill — v1.2
+- ✓ Time-based returns (1M, 3M, 6M, 1Y, All) — v1.2
+- ✓ Per-stock performance rankings (sorted by gain/loss %) — v1.2
+- ✓ Sector breakdown as doughnut chart — v1.2
+- ✓ Asset class breakdown (stocks vs ETFs vs bonds vs cash) — v1.2
+- ✓ Concentration warnings (position >25%, sector >40%) — v1.2
+- ✓ Projected annual dividend income — v1.2
+- ✓ Dividend income by sector — v1.2
+- ✓ Sector/industry data cached from Yahoo Finance (30-day TTL) — v1.2
+- ✓ Batch stock entry (up to 50 symbols) with auto company name lookup — v1.2
+- ✓ Loading indicators during backfill and sector enrichment — v1.2
+- ✓ Date range selector for historical chart — v1.2
+- ✓ Return calculations with explanatory disclaimer — v1.2
+
 ### Active
 
 <!-- Current scope. Building toward these. -->
 
-## Current Milestone: v1.2 Analytics & SoFi Import
-
-**Goal:** Add portfolio analytics (performance tracking, allocation insights, income projections) and investigate SoFi data import.
-
-**Target features:**
-- Historical portfolio value chart (backfill + daily snapshots)
-- Per-stock return rankings (best/worst performers)
-- Time-based returns (week, month, YTD, since inception, annualized)
-- Sector breakdown allocation
-- Asset class view (stocks vs ETFs vs bonds vs cash)
-- Concentration warnings (overweight alerts)
-- Projected annual dividend income
-- Income by sector breakdown
-- SoFi import (research viability, implement if path exists)
+(None — next milestone not yet planned)
 
 ### Out of Scope
 
@@ -66,24 +69,32 @@ Portfolio data stays current through simple CSV re-imports from brokers, with ma
 - Trading — this is a tracker, not a trading platform
 - Multi-user / authentication beyond basic auth — single-user personal tool
 - SnapTrade / Plaid / direct broker APIs — CSV import is simpler and has no cost or API dependency
-- SoFi import — Investigating in v1.2; moved from out-of-scope to active research
+- SoFi import — SoFi doesn't export holdings CSV; no clean path without API
 - Automated background sync — CSV import is user-initiated
 - Transaction history import — positions snapshot is sufficient; reconstructing from trades is fragile
+- Time-weighted return (TWR) — requires daily snapshots infrastructure; simple money-weighted sufficient
+- Daily auto-snapshots (cron) — lazy generation on page load sufficient for single-user
+- Tax lot tracking — brokers don't provide lot-level data in position CSV exports
 
 ## Context
 
-Stockd is a working stock portfolio tracker shipped through two milestones. The codebase is a monolithic two-file PHP app (1,312 lines backend, 2,845 lines frontend) with SQLite storage and Yahoo Finance for market data. It has a mature UI with stock cards, charts, alerts, benchmarks, dividends, PWA support, and now CSV-based portfolio import.
+Stockd is a working stock portfolio tracker shipped through three milestones (v1.0-v1.2). The codebase was refactored from a monolithic two-file app into a modular architecture with domain-organized backend modules and shared utility libraries. It provides portfolio analytics, historical performance tracking, sector/asset allocation analysis, and dividend income projections alongside CSV-based portfolio import.
 
 **v1.0** added session-based authentication and attempted SnapTrade API integration (abandoned when SnapTrade didn't support Fidelity/SoFi).
 
-**v1.1** pivoted to CSV import: removed all SnapTrade code, built a parser supporting Fidelity and Schwab TSV exports with auto-detection, added import UI, and implemented re-import diff detection that flags removed stocks for user review.
+**v1.1** pivoted to CSV import: removed all SnapTrade code, built a parser supporting Fidelity and Schwab TSV exports with auto-detection, added import UI, and implemented re-import diff detection.
+
+**v1.2** added portfolio analytics: refactored the monolithic API into modules, built snapshot infrastructure for historical tracking, added Chart.js-based visualizations for performance/allocation/income, and batch stock entry.
 
 **Current state:**
-- api.php: ~1,312 lines (auth, stocks CRUD, CSV import with diff detection, flag management)
-- index.php: ~2,845 lines (Alpine.js SPA with stock cards, charts, import modal, flagged stock UI)
-- SQLite: stocks, alerts, dividends tables (with removed_flag column)
-- Dependencies: vlucas/phpdotenv only
+- api.php: 69 lines (thin router dispatching to modules)
+- modules/: 6 files — analytics (991 LOC), quotes, stocks, import, dividends, alerts, export
+- lib/: 4 files — database, yahoo, helpers, csv-parsers
+- index.php: ~3,959 lines (Alpine.js SPA with analytics dashboard)
+- SQLite: stocks, alerts, dividends, portfolio_snapshots, sector_cache, asset_type_cache tables
+- Dependencies: vlucas/phpdotenv, Chart.js + moment.js (CDN)
 - Broker support: Fidelity (TSV, 16-col), Schwab (TSV, ~15-col)
+- Total: 6,837 LOC PHP
 
 ## Constraints
 
@@ -91,7 +102,7 @@ Stockd is a working stock portfolio tracker shipped through two milestones. The 
 - **Hosting**: Local PHP server
 - **Cost**: Zero — no API keys or paid services
 - **Single-user**: No multi-tenant concerns, basic auth already in place
-- **Broker coverage**: Fidelity and Schwab via CSV (SoFi under investigation for v1.2)
+- **Broker coverage**: Fidelity and Schwab via CSV (SoFi deferred — no export available)
 
 ## Key Decisions
 
@@ -110,6 +121,14 @@ Stockd is a working stock portfolio tracker shipped through two milestones. The 
 | Use purchase_price for cost basis | Existing field semantically correct; enables gain/loss with no schema change | ✓ Good |
 | Real TSV format support | Real broker exports use tabs, not commas; parser auto-detects delimiter | ✓ Good — discovered during human testing |
 | One-time DROP TABLE migration | Safe with IF EXISTS; SnapTrade tables contain only SnapTrade data | ✓ Good |
+| Refactor before analytics | Monolithic api.php would grow from 926 to 2000+ lines; modularize first | ✓ Good — 94% reduction to 57-line router |
+| INTEGER timestamps for snapshots | 3x faster sorting/comparison, efficient TTL math | ✓ Good |
+| O(symbols) Yahoo calls for backfill | Fetch all prices first, then iterate dates; avoids O(symbols*dates) API calls | ✓ Good |
+| ON CONFLICT DO NOTHING for snapshots | Preserves real-time snapshots over backfilled historical data | ✓ Good |
+| ETFs excluded from sector allocation | ETFs belong in asset class chart, not sector breakdown | ✓ Good |
+| Trailing 12-month dividend sum | More accurate than yield calculation for income projection | ✓ Good |
+| Batch entry with partial success | created/skipped/errors breakdown; 50 symbol limit per batch | ✓ Good |
+| SoFi deferred indefinitely | SoFi doesn't export holdings CSV; no clean import path | — Closed |
 
 ---
-*Last updated: 2026-02-11 after v1.2 milestone started*
+*Last updated: 2026-02-12 after v1.2 milestone*
