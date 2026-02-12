@@ -1630,9 +1630,9 @@ requireAuth();
             <!-- Loading State -->
             <div class="news-loading" x-show="analyticsLoading">Loading analytics data...</div>
 
-            <!-- Backfill Banner (shown when no data exists) -->
-            <div class="backfill-banner" x-show="!analyticsLoading && historicalSnapshots.length === 0">
-                <p>No historical data yet. Backfill 90 days of portfolio history from Yahoo Finance.</p>
+            <!-- Backfill Banner (shown when insufficient data for meaningful charts) -->
+            <div class="backfill-banner" x-show="!analyticsLoading && historicalSnapshots.length < 7">
+                <p x-text="historicalSnapshots.length === 0 ? 'No historical data yet. Backfill 90 days of portfolio history from Yahoo Finance.' : 'Only ' + historicalSnapshots.length + ' day(s) of data. Backfill 90 days of history for meaningful charts.'"></p>
                 <button @click="triggerBackfill()" :disabled="backfillStatus === 'loading'" class="primary">
                     <span x-show="backfillStatus !== 'loading'">Backfill History</span>
                     <span x-show="backfillStatus === 'loading'">Backfilling... (this may take a minute)</span>
@@ -1711,8 +1711,8 @@ requireAuth();
                                     <td x-text="'$' + parseFloat(stock.current_price).toFixed(2)"></td>
                                     <td :class="stock.gain_loss_pct >= 0 ? 'up' : 'down'"
                                         x-text="(stock.gain_loss_pct >= 0 ? '+' : '') + stock.gain_loss_pct.toFixed(2) + '%'"></td>
-                                    <td :class="stock.gain_loss_dollars >= 0 ? 'up' : 'down'"
-                                        x-text="(stock.gain_loss_dollars >= 0 ? '+$' : '-$') + Math.abs(stock.gain_loss_dollars).toFixed(2)"></td>
+                                    <td :class="stock.gain_loss_amount >= 0 ? 'up' : 'down'"
+                                        x-text="(stock.gain_loss_amount >= 0 ? '+$' : '-$') + Math.abs(stock.gain_loss_amount).toFixed(2)"></td>
                                 </tr>
                             </template>
                         </tbody>
@@ -3172,20 +3172,21 @@ requireAuth();
                 async loadAnalyticsData() {
                     this.analyticsLoading = true;
                     try {
-                        // Fetch snapshots
-                        const snapshotsRes = await fetch('api.php?action=snapshots&days=365');
+                        // Fetch all three endpoints in parallel
+                        const [snapshotsRes, returnsRes, rankingsRes] = await Promise.all([
+                            fetch('api.php?action=snapshots&days=365'),
+                            fetch('api.php?action=returns'),
+                            fetch('api.php?action=rankings')
+                        ]);
+
                         const snapshotsData = await snapshotsRes.json();
                         this.historicalSnapshots = snapshotsData.snapshots || [];
 
-                        // Fetch returns
-                        const returnsRes = await fetch('api.php?action=returns');
                         const returnsData = await returnsRes.json();
                         this.returns = returnsData.returns || {};
                         this.latestValue = returnsData.latestValue || null;
                         this.returnDisclaimer = returnsData.disclaimer || '';
 
-                        // Fetch rankings
-                        const rankingsRes = await fetch('api.php?action=rankings');
                         const rankingsData = await rankingsRes.json();
                         this.performanceRankings = rankingsData.rankings || [];
 

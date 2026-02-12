@@ -287,12 +287,22 @@ function backfillSnapshots(PDO $pdo): never {
     }
 
     // Generate snapshots for each of the last 90 days
+    // Track last known price per symbol to carry forward on weekends/holidays
+    $lastKnownPrice = [];
     $backfilled = 0;
     $skipped = 0;
     $startDate = strtotime('90 days ago midnight');
     $endDate = strtotime('today midnight');
 
     for ($date = $startDate; $date <= $endDate; $date += 86400) {
+        // Update last known prices from priceMap for this date
+        foreach ($holdings as $holding) {
+            $symbol = $holding['symbol'];
+            if (isset($priceMap[$symbol][$date])) {
+                $lastKnownPrice[$symbol] = $priceMap[$symbol][$date];
+            }
+        }
+
         // Skip if snapshot already exists
         $stmt = $pdo->prepare("SELECT id FROM portfolio_snapshots WHERE snapshot_date = ?");
         $stmt->execute([$date]);
@@ -310,8 +320,8 @@ function backfillSnapshots(PDO $pdo): never {
             $shares = (float) $holding['shares'];
             $purchasePrice = (float) ($holding['purchase_price'] ?? 0);
 
-            // Lookup historical price, fallback to purchase_price
-            $price = $priceMap[$symbol][$date] ?? $purchasePrice;
+            // Lookup: today's price → last known close → purchase_price
+            $price = $priceMap[$symbol][$date] ?? $lastKnownPrice[$symbol] ?? $purchasePrice;
             $totalValue += $shares * $price;
         }
 
@@ -395,71 +405,91 @@ function getReturns(PDO $pdo): never {
 
 /**
  * Get per-stock performance rankings
- * Returns all holdings sorted by gain/loss percentage descending
+ * Uses batch Yahoo quote to get current prices in one request, then calculates gain/loss
  */
 function getPerformanceRankings(PDO $pdo): never {
-    // Get all active holdings with cost basis
+    // Get all active holdings with cost basis, aggregated by symbol
     $stmt = $pdo->query("
-        SELECT symbol, company_name, shares, purchase_price
+        SELECT symbol, company_name, SUM(shares) as shares,
+               ROUND(SUM(purchase_price * shares) / SUM(shares), 2) as avg_cost
         FROM stocks
         WHERE is_watchlist = 0
           AND removed_flag = 0
           AND shares > 0
           AND purchase_price IS NOT NULL
           AND purchase_price > 0
+        GROUP BY symbol
     ");
     $holdings = $stmt->fetchAll();
 
-    $rankings = [];
-    $context = yahooContext();
+    if (empty($holdings)) {
+        jsonResponse(['rankings' => []]);
+    }
 
-    foreach ($holdings as $holding) {
-        $symbol = $holding['symbol'];
-        $companyName = $holding['company_name'];
-        $shares = (float) $holding['shares'];
-        $purchasePrice = (float) $holding['purchase_price'];
+    // Batch fetch current prices using the same spark endpoint as quotes module
+    $symbols = array_column($holdings, 'symbol');
+    $symbolList = implode(',', array_map('urlencode', $symbols));
+    $url = "https://query1.finance.yahoo.com/v8/finance/spark?symbols={$symbolList}&range=1d&interval=1d";
+    $context = yahooContext(30);
+    $response = @file_get_contents($url, false, $context);
 
-        // Fetch current price from Yahoo Finance
-        $url = "https://query1.finance.yahoo.com/v8/finance/chart/" . urlencode($symbol) . "?interval=1d&range=1d";
-        $response = @file_get_contents($url, false, $context);
-
-        $currentPrice = null;
-
-        if ($response !== false) {
-            $data = json_decode($response, true);
-            if (isset($data['chart']['result'][0]['meta']['regularMarketPrice'])) {
-                $currentPrice = (float) $data['chart']['result'][0]['meta']['regularMarketPrice'];
+    $currentPrices = [];
+    if ($response !== false) {
+        $data = json_decode($response, true);
+        foreach ($symbols as $symbol) {
+            $closes = $data[$symbol]['close'] ?? null;
+            if ($closes && is_array($closes)) {
+                $lastClose = end($closes);
+                if ($lastClose !== null && $lastClose > 0) {
+                    $currentPrices[$symbol] = (float) $lastClose;
+                }
             }
         }
+    }
 
-        // Skip if Yahoo fetch fails
-        if ($currentPrice === null || $currentPrice <= 0) {
-            // Rate limiting even on failures
+    // Fallback: if batch failed, try individual calls
+    if (empty($currentPrices)) {
+        foreach ($holdings as $holding) {
+            $symbol = $holding['symbol'];
+            $url = "https://query1.finance.yahoo.com/v8/finance/chart/" . urlencode($symbol) . "?interval=1d&range=1d";
+            $res = @file_get_contents($url, false, $context);
+            if ($res !== false) {
+                $d = json_decode($res, true);
+                if (isset($d['chart']['result'][0]['meta']['regularMarketPrice'])) {
+                    $currentPrices[$symbol] = (float) $d['chart']['result'][0]['meta']['regularMarketPrice'];
+                }
+            }
             usleep(100000);
+        }
+    }
+
+    $rankings = [];
+    foreach ($holdings as $holding) {
+        $symbol = $holding['symbol'];
+        $shares = (float) $holding['shares'];
+        $avgCost = (float) $holding['avg_cost'];
+        $currentPrice = $currentPrices[$symbol] ?? null;
+
+        if ($currentPrice === null || $currentPrice <= 0) {
             continue;
         }
 
-        // Calculate metrics
-        $gainLossPct = round((($currentPrice - $purchasePrice) / $purchasePrice) * 100, 2);
-        $gainLossAmount = round(($currentPrice - $purchasePrice) * $shares, 2);
+        $gainLossPct = round((($currentPrice - $avgCost) / $avgCost) * 100, 2);
+        $gainLossAmount = round(($currentPrice - $avgCost) * $shares, 2);
         $totalValue = round($currentPrice * $shares, 2);
 
         $rankings[] = [
             'symbol' => $symbol,
-            'company_name' => $companyName,
-            'cost_basis' => $purchasePrice,
+            'company_name' => $holding['company_name'],
+            'cost_basis' => $avgCost,
             'current_price' => $currentPrice,
             'shares' => $shares,
             'gain_loss_pct' => $gainLossPct,
             'gain_loss_amount' => $gainLossAmount,
             'total_value' => $totalValue
         ];
-
-        // Rate limiting: 100ms between requests
-        usleep(100000);
     }
 
-    // Sort by gain_loss_pct descending (best performers first)
     usort($rankings, function($a, $b) {
         return $b['gain_loss_pct'] <=> $a['gain_loss_pct'];
     });
