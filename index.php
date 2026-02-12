@@ -1755,9 +1755,10 @@ requireAuth();
                 <div>
                     <h4 style="margin-bottom: 12px;">Portfolio Value Over Time</h4>
                     <div class="date-range-buttons">
-                        <button @click="selectDateRange('1w')" :class="{ active: dateRange === '1w' }">1W</button>
                         <button @click="selectDateRange('1m')" :class="{ active: dateRange === '1m' }">1M</button>
-                        <button @click="selectDateRange('ytd')" :class="{ active: dateRange === 'ytd' }">YTD</button>
+                        <button @click="selectDateRange('3m')" :class="{ active: dateRange === '3m' }">3M</button>
+                        <button @click="selectDateRange('6m')" :class="{ active: dateRange === '6m' }">6M</button>
+                        <button @click="selectDateRange('1y')" :class="{ active: dateRange === '1y' }">1Y</button>
                         <button @click="selectDateRange('all')" :class="{ active: dateRange === 'all' }">All</button>
                     </div>
                     <div class="chart-container" x-show="filteredSnapshots().length > 0">
@@ -3555,13 +3556,16 @@ requireAuth();
                     let cutoff = 0;
                     const now = Date.now();
 
-                    if (this.dateRange === '1w') {
-                        cutoff = now - (7 * 86400000);
-                    } else if (this.dateRange === '1m') {
+                    if (this.dateRange === '1m') {
                         cutoff = now - (30 * 86400000);
-                    } else if (this.dateRange === 'ytd') {
-                        cutoff = new Date(new Date().getFullYear(), 0, 1).getTime();
+                    } else if (this.dateRange === '3m') {
+                        cutoff = now - (90 * 86400000);
+                    } else if (this.dateRange === '6m') {
+                        cutoff = now - (180 * 86400000);
+                    } else if (this.dateRange === '1y') {
+                        cutoff = now - (365 * 86400000);
                     }
+                    // 'all' keeps cutoff at 0 (show everything)
 
                     return this.historicalSnapshots.filter(s => (s.snapshot_date * 1000) >= cutoff);
                 },
@@ -3581,6 +3585,9 @@ requireAuth();
                         x: s.snapshot_date * 1000,
                         y: parseFloat(s.total_value)
                     }));
+
+                    // Determine time unit based on date range
+                    const timeUnit = ({'1m': 'day', '3m': 'day', '6m': 'week', '1y': 'month', 'all': 'month'})[this.dateRange] || 'day';
 
                     historicalChart = new Chart(canvas, {
                         type: 'line',
@@ -3606,9 +3613,11 @@ requireAuth();
                                 x: {
                                     type: 'time',
                                     time: {
-                                        unit: 'day',
+                                        unit: timeUnit,
                                         displayFormats: {
-                                            day: 'MMM D'
+                                            day: 'MMM D',
+                                            week: 'MMM D',
+                                            month: 'MMM YYYY'
                                         }
                                     },
                                     grid: {

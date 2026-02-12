@@ -399,7 +399,7 @@ function getReturns(PDO $pdo): never {
     jsonResponse([
         'returns' => $returns,
         'latest_value' => $latestValue,
-        'disclaimer' => 'Price return only. Does not include dividends, fees, or the effect of deposits/withdrawals. For tax reporting, use your broker statements.'
+        'disclaimer' => 'Returns shown are price-only (capital gains/losses). They do not include dividends received, brokerage fees, or the impact of deposits and withdrawals. For dividend-paying stocks, actual total returns are typically 2-4% higher annually. These figures may differ from your broker statements, which often show time-weighted or money-weighted returns. For tax reporting, always use your broker-provided documents.'
     ]);
 }
 
