@@ -136,8 +136,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 12-01-PLAN.md — Batch stock entry mode (backend endpoint + frontend modal)
-- [ ] 12-02-PLAN.md — Loading states, date range selector, and return disclaimer enhancements
+- [x] 12-01-PLAN.md — Batch stock entry mode (backend endpoint + frontend modal)
+- [x] 12-02-PLAN.md — Loading states, date range selector, and return disclaimer enhancements
 
 ## Progress
 
@@ -155,11 +155,13 @@ Phases execute in numeric order: 8 → 9 → 10 → 11 → 12
 | 9. Snapshots Foundation | v1.2 | 2/2 | Complete | 2026-02-11 |
 | 10. Historical Analytics | v1.2 | 2/2 | Complete | 2026-02-11 |
 | 11. Allocation & Risk | v1.2 | 2/2 | Complete | 2026-02-11 |
-| 12. Polish | v1.2 | 0/2 | Not started | - |
+| 12. Polish | v1.2 | 2/2 | Complete | 2026-02-12 |
 
-**Overall:** 9 phases complete, 1 phase pending
+**Overall:** 10 phases complete, 0 phases pending
+
+**v1.2 Milestone COMPLETE** - All analytics and manual entry features shipped
 
 ---
 
 *Roadmap created: 2026-02-09*
-*Last updated: 2026-02-11 (Phase 12 planned)*
+*Last updated: 2026-02-12 (Phase 12 complete - v1.2 finished)*
