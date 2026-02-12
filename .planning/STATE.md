@@ -9,19 +9,19 @@ See: .planning/PROJECT.md (updated 2026-02-11)
 
 ## Current Position
 
-Phase: 10 of 12 (Historical Analytics)
-Plan: 2 of 2 in current phase
-Status: Complete
-Last activity: 2026-02-11 — Completed plan 10-02
+Phase: 11 of 12 (Allocation & Risk)
+Plan: 1 of 2 in current phase
+Status: In Progress
+Last activity: 2026-02-12 — Completed plan 11-01
 
-Progress: [████████░░] 83% (10 of 12 phases complete)
+Progress: [█████████░] 92% (11 of 12 phases complete)
 
 ## Performance Metrics
 
 **Velocity (v1.0 + v1.1 + v1.2 combined):**
-- Total plans completed: 13
-- Average duration: 262 seconds
-- Total execution time: 1.32 hours
+- Total plans completed: 14
+- Average duration: 255 seconds
+- Total execution time: 1.41 hours
 
 **By Phase:**
 
@@ -35,12 +35,14 @@ Progress: [████████░░] 83% (10 of 12 phases complete)
 | 08-refactoring | 2 | 512s | 256s |
 | 09-snapshots-foundation | 2 | 207s | 103s |
 | 10-historical-analytics | 2 | 509s | 254s |
+| 11-allocation-risk | 1 | 158s | 158s |
 
 **Recent Trend:**
-- Phase 10 complete (2 of 2 plans, 509s total)
-- Trend: Stable
+- Phase 11 in progress (1 of 2 plans, 158s total)
+- Trend: Improving
 | Phase 10-historical-analytics P01 | 2 min | 2 tasks | 3 files |
 | Phase 10-historical-analytics P02 | 6 min | 2 tasks | 2 files |
+| Phase 11 P01 | 158 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -64,6 +66,9 @@ Recent decisions affecting v1.2:
 - [Phase 10]: Chart.js instance stored outside Alpine scope to prevent memory leaks
 - [Phase 10]: Batch Yahoo spark endpoint for rankings instead of per-stock calls
 - [Phase 10]: Weekend price carry-forward (last known close, not purchase_price fallback)
+- [Phase 11]: ETFs excluded from sector allocation chart (belong in asset class chart)
+- [Phase 11]: Dividend income uses trailing 12-month sum (more accurate than yield calculation)
+- [Phase 11]: Asset type caching with 30-day TTL to minimize Yahoo API calls
 
 ### Pending Todos
 
@@ -85,12 +90,12 @@ None yet.
 
 ## Session Continuity
 
-**Last session:** 2026-02-11
-**Stopped at:** Phase 10 verified and complete
-**Next step:** Begin Phase 11 (Allocation & Risk)
+**Last session:** 2026-02-12T03:44:43.639Z
+**Stopped at:** Completed 11-01-PLAN.md
+**Next step:** Continue Phase 11 (Plan 02 - Frontend)
 **Resume:** None
 
 ---
 
 *State initialized: 2026-02-09 (v1.0)*
-*Updated: 2026-02-11 (Phase 10 complete)*
+*Updated: 2026-02-12 (Phase 11 in progress)*
