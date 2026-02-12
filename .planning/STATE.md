@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-11)
 
 **Core value:** Portfolio data stays current through simple CSV re-imports from brokers, with manual entry available for any stock — no API keys, no OAuth, no third-party dependencies.
-**Current focus:** Phase 10 complete — ready for Phase 11
+**Current focus:** Phase 11 complete — Phase 12 (Polish) in progress
 
 ## Current Position
 
-Phase: 11 of 12 (Allocation & Risk)
-Plan: 2 of 2 in current phase (Phase Complete)
-Status: In Progress
-Last activity: 2026-02-12 — Completed plan 11-02
+Phase: 12 of 12 (Polish)
+Plan: 1 of 1 in current phase (Phase Complete)
+Status: Complete
+Last activity: 2026-02-12 — Completed plan 12-01
 
-Progress: [█████████░] 92% (11 of 12 phases complete)
+Progress: [██████████] 100% (12 of 12 phases complete)
 
 ## Performance Metrics
 
 **Velocity (v1.0 + v1.1 + v1.2 combined):**
-- Total plans completed: 15
-- Average duration: 250 seconds
-- Total execution time: 1.46 hours
+- Total plans completed: 16
+- Average duration: 247 seconds
+- Total execution time: 1.57 hours
 
 **By Phase:**
 
@@ -36,14 +36,15 @@ Progress: [█████████░] 92% (11 of 12 phases complete)
 | 09-snapshots-foundation | 2 | 207s | 103s |
 | 10-historical-analytics | 2 | 509s | 254s |
 | 11-allocation-risk | 2 | 309s | 154s |
+| 12-polish | 1 | 209s | 209s |
 
 **Recent Trend:**
-- Phase 11 complete (2 of 2 plans, 309s total)
-- Trend: Improving
-| Phase 10-historical-analytics P01 | 2 min | 2 tasks | 3 files |
+- Phase 12 complete (1 of 1 plans, 209s total)
+- Trend: Excellent
 | Phase 10-historical-analytics P02 | 6 min | 2 tasks | 2 files |
 | Phase 11 P01 | 158s | 2 tasks | 4 files |
 | Phase 11 P02 | 151s | 2 tasks | 1 file |
+| Phase 12 P01 | 209s | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -70,6 +71,10 @@ Recent decisions affecting v1.2:
 - [Phase 11]: ETFs excluded from sector allocation chart (belong in asset class chart)
 - [Phase 11]: Dividend income uses trailing 12-month sum (more accurate than yield calculation)
 - [Phase 11]: Asset type caching with 30-day TTL to minimize Yahoo API calls
+- [Phase 12]: Batch entry uses quoteSummary/price endpoint for company names (has shortName/longName)
+- [Phase 12]: 50 symbol batch limit (prevents abuse, reasonable UX constraint)
+- [Phase 12]: Duplicate check across ALL accounts (not per-account, avoids confusion)
+- [Phase 12]: Partial success model for batch operations (created/skipped/errors breakdown)
 
 ### Pending Todos
 
@@ -91,12 +96,12 @@ None yet.
 
 ## Session Continuity
 
-**Last session:** 2026-02-12T03:48:28Z
-**Stopped at:** Completed 11-02-PLAN.md (Phase 11 Complete)
-**Next step:** Begin Phase 12 (Manual Entry - final phase)
+**Last session:** 2026-02-12T04:56:18Z
+**Stopped at:** Completed 12-01-PLAN.md (Phase 12 Complete - ALL PHASES COMPLETE)
+**Next step:** Project v1.2 complete - ready for deployment
 **Resume:** None
 
 ---
 
 *State initialized: 2026-02-09 (v1.0)*
-*Updated: 2026-02-12 (Phase 11 in progress)*
+*Updated: 2026-02-12 (Phase 12 complete - v1.2 finished)*
