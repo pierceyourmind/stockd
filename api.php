@@ -39,6 +39,7 @@ match ($action) {
     'create' => createStock($pdo),
     'update' => updateStock($pdo),
     'delete' => deleteStock($pdo),
+    'batchCreate' => batchCreateStocks($pdo),
     'importCSV' => importCSV($pdo),
     'dismissFlag' => dismissFlag($pdo),
     'confirmRemoval' => confirmRemoval($pdo),
