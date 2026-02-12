@@ -108,7 +108,7 @@ Plans:
 - [x] 10-01-PLAN.md — Backend: backfill, returns, and rankings API endpoints
 - [x] 10-02-PLAN.md — Frontend: historical chart, returns display, rankings table, and UI
 
-#### Phase 11: Allocation & Risk
+#### Phase 11: Allocation & Risk ✓
 **Goal**: Sector breakdown, asset class analysis, concentration warnings, and income projections
 **Depends on**: Phase 9 (needs sector data)
 **Requirements**: ALLOC-01, ALLOC-03, ALLOC-04, INC-01, INC-02
@@ -121,8 +121,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 11-01-PLAN.md — Backend: sector allocation, asset class, concentration risk, and dividend income endpoints
-- [ ] 11-02-PLAN.md — Frontend: doughnut charts, concentration warnings, and income display
+- [x] 11-01-PLAN.md — Backend: sector allocation, asset class, concentration risk, and dividend income endpoints
+- [x] 11-02-PLAN.md — Frontend: doughnut charts, concentration warnings, and income display
 
 #### Phase 12: Polish
 **Goal**: Batch entry, loading states, and UX refinements
@@ -153,12 +153,12 @@ Phases execute in numeric order: 8 → 9 → 10 → 11 → 12
 | 8. Refactoring | v1.2 | 2/2 | Complete | 2026-02-11 |
 | 9. Snapshots Foundation | v1.2 | 2/2 | Complete | 2026-02-11 |
 | 10. Historical Analytics | v1.2 | 2/2 | Complete | 2026-02-11 |
-| 11. Allocation & Risk | v1.2 | 0/2 | Planning complete | - |
+| 11. Allocation & Risk | v1.2 | 2/2 | Complete | 2026-02-11 |
 | 12. Polish | v1.2 | 0/0 | Not started | - |
 
-**Overall:** 8 phases complete, 2 phases pending
+**Overall:** 9 phases complete, 1 phase pending
 
 ---
 
 *Roadmap created: 2026-02-09*
-*Last updated: 2026-02-11 (Phase 11 planned)*
+*Last updated: 2026-02-11 (Phase 11 complete)*
