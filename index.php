@@ -1315,6 +1315,10 @@ requireAuth();
             color: var(--pico-muted-color);
             margin-bottom: 24px;
             font-style: italic;
+            background: rgba(255, 193, 7, 0.1);
+            padding: 12px;
+            border-left: 3px solid #ffc107;
+            border-radius: 4px;
         }
 
         .date-range-buttons {
@@ -1701,14 +1705,20 @@ requireAuth();
             <h3>Historical Portfolio Analytics</h3>
 
             <!-- Loading State -->
-            <div class="news-loading" x-show="analyticsLoading">Loading analytics data...</div>
+            <div x-show="analyticsLoading" style="text-align: center; padding: 40px;">
+                <span class="loading" style="width: 32px; height: 32px; display: inline-block; margin-bottom: 12px;"></span>
+                <p style="color: var(--pico-muted-color);">Loading analytics data...</p>
+            </div>
 
             <!-- Backfill Banner (shown when insufficient data for meaningful charts) -->
             <div class="backfill-banner" x-show="!analyticsLoading && historicalSnapshots.length < 7">
                 <p x-text="historicalSnapshots.length === 0 ? 'No historical data yet. Backfill 90 days of portfolio history from Yahoo Finance.' : 'Only ' + historicalSnapshots.length + ' day(s) of data. Backfill 90 days of history for meaningful charts.'"></p>
-                <button @click="triggerBackfill()" :disabled="backfillStatus === 'loading'" class="primary">
+                <button @click="triggerBackfill()" :disabled="backfillStatus === 'loading'" :aria-busy="backfillStatus === 'loading'" class="primary">
                     <span x-show="backfillStatus !== 'loading'">Backfill History</span>
-                    <span x-show="backfillStatus === 'loading'">Backfilling... (this may take a minute)</span>
+                    <span x-show="backfillStatus === 'loading'">
+                        <span class="loading" style="width: 16px; height: 16px; display: inline-block; vertical-align: middle; margin-right: 8px;"></span>
+                        Backfilling... this may take 1-2 minutes
+                    </span>
                 </button>
             </div>
 
@@ -1811,7 +1821,10 @@ requireAuth();
             <h3>Portfolio Allocation & Income</h3>
 
             <!-- Loading State -->
-            <div class="news-loading" x-show="allocationLoading">Loading allocation data...</div>
+            <div x-show="allocationLoading" style="text-align: center; padding: 40px;">
+                <span class="loading" style="width: 32px; height: 32px; display: inline-block; margin-bottom: 12px;"></span>
+                <p style="color: var(--pico-muted-color);">Loading allocation data...</p>
+            </div>
 
             <!-- Content (when loaded) -->
             <div x-show="!allocationLoading">
