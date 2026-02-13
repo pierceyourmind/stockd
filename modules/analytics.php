@@ -623,11 +623,45 @@ function getSectorAllocation(PDO $pdo): never {
 
         // Filter to EQUITY only (exclude ETFs from sector chart)
         $assetType = $assetTypeMap[$symbol] ?? null;
-        if ($assetType && $assetType !== 'EQUITY') {
-            continue; // Skip ETFs, mutual funds, etc
+
+        if ($assetType === null) {
+            // Cache miss - fetch from Yahoo
+            $result = fetchAssetType($symbol);
+            if (!$result['error']) {
+                $assetType = $result['quote_type'];
+                $stmt = $pdo->prepare("
+                    INSERT INTO asset_type_cache (symbol, quote_type, cached_at)
+                    VALUES (?, ?, ?)
+                ");
+                $stmt->execute([$symbol, $assetType, time()]);
+                usleep(500000); // Rate limiting
+            }
         }
 
-        $sector = $sectorMap[$symbol] ?? 'Unknown';
+        if ($assetType !== 'EQUITY') {
+            continue; // Skip ETFs, mutual funds, and unknown types
+        }
+
+        $sector = $sectorMap[$symbol] ?? null;
+
+        if ($sector === null) {
+            // Cache miss - fetch from Yahoo
+            $sectorResult = fetchSectorData($symbol);
+            if (!$sectorResult['error'] && $sectorResult['sector'] !== null) {
+                $sector = $sectorResult['sector'];
+                $stmt = $pdo->prepare("
+                    INSERT INTO sector_cache (symbol, sector, industry, cached_at)
+                    VALUES (?, ?, ?, ?)
+                ");
+                $stmt->execute([$symbol, $sectorResult['sector'], $sectorResult['industry'], time()]);
+                usleep(500000); // Rate limiting
+            }
+        }
+
+        if ($sector === null) {
+            continue; // Skip symbols with no sector data
+        }
+
         $value = $shares * $price;
 
         if (!isset($sectorValues[$sector])) {
