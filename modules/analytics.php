@@ -860,7 +860,26 @@ function getConcentrationRisk(PDO $pdo): never {
         }
 
         // Accumulate sector values for sector concentration check
-        $sector = $sectorMap[$symbol] ?? 'Unknown';
+        $sector = $sectorMap[$symbol] ?? null;
+
+        if ($sector === null) {
+            // Cache miss - fetch from Yahoo
+            $sectorResult = fetchSectorData($symbol);
+            if (!$sectorResult['error'] && $sectorResult['sector'] !== null) {
+                $sector = $sectorResult['sector'];
+                $stmt = $pdo->prepare("
+                    INSERT INTO sector_cache (symbol, sector, industry, cached_at)
+                    VALUES (?, ?, ?, ?)
+                ");
+                $stmt->execute([$symbol, $sectorResult['sector'], $sectorResult['industry'], time()]);
+                usleep(500000);
+            }
+        }
+
+        if ($sector === null) {
+            continue; // Skip symbols with no sector data
+        }
+
         if (!isset($sectorValues[$sector])) {
             $sectorValues[$sector] = 0.0;
         }
@@ -990,7 +1009,28 @@ function getDividendIncome(PDO $pdo): never {
         ];
 
         // Accumulate by sector
-        $sector = $sectorMap[$symbol] ?? 'Unknown';
+        $sector = $sectorMap[$symbol] ?? null;
+
+        if ($sector === null) {
+            // Cache miss - fetch from Yahoo
+            $sectorResult = fetchSectorData($symbol);
+            if (!$sectorResult['error'] && $sectorResult['sector'] !== null) {
+                $sector = $sectorResult['sector'];
+                $stmt = $pdo->prepare("
+                    INSERT INTO sector_cache (symbol, sector, industry, cached_at)
+                    VALUES (?, ?, ?, ?)
+                ");
+                $stmt->execute([$symbol, $sectorResult['sector'], $sectorResult['industry'], time()]);
+                usleep(500000);
+            }
+        }
+
+        // Use 'Uncategorized' for dividend-paying stocks without sector data
+        // (we still want to show their income, unlike sector allocation where we skip them)
+        if ($sector === null) {
+            $sector = 'Uncategorized';
+        }
+
         if (!isset($bySector[$sector])) {
             $bySector[$sector] = 0.0;
         }
