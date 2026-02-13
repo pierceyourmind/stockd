@@ -757,6 +757,11 @@ function getAssetClassAllocation(PDO $pdo): never {
             }
         }
 
+        // Skip symbols we couldn't classify (API failure)
+        if ($quoteType === null) {
+            continue;
+        }
+
         // Map quoteType to display name
         $assetClass = match($quoteType) {
             'EQUITY' => 'Stocks',
