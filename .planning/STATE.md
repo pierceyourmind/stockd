@@ -61,11 +61,12 @@ None — between milestones.
 | 2 | Show percentage beside stock labels in allocation chart | 2026-02-11 | abf988c | — |
 | 3 | Portfolio dividend income aggregation by year/month | 2026-02-11 | c4538cc | [3-add-total-dividends-gained-per-month-and](./quick/3-add-total-dividends-gained-per-month-and/) |
 | 4 | Fix Unknown sectors and Other asset classes in allocation charts | 2026-02-13 | e37053a | [4-fix-unknown-entries-in-sector-breakdown-](./quick/4-fix-unknown-entries-in-sector-breakdown-/) |
+| 5 | Add Docker containerization with Dockerfile and docker-compose.yml | 2026-02-13 | 3381e21 | — |
 
 ## Session Continuity
 
 **Last session:** 2026-02-13
-**Stopped at:** Completed quick-4 (fix Unknown sectors/Other asset classes)
+**Stopped at:** Completed quick-5 (Docker containerization)
 **Next step:** `/gsd:new-milestone` to plan next version
 **Resume:** None
 
