@@ -1,0 +1,8 @@
+.git
+.planning
+.env
+db/
+cookies.txt
+*.md
+.gitignore
+.dockerignore
