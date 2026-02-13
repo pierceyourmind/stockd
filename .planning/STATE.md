@@ -62,15 +62,16 @@ None — between milestones.
 | 3 | Portfolio dividend income aggregation by year/month | 2026-02-11 | c4538cc | [3-add-total-dividends-gained-per-month-and](./quick/3-add-total-dividends-gained-per-month-and/) |
 | 4 | Fix Unknown sectors and Other asset classes in allocation charts | 2026-02-13 | e37053a | [4-fix-unknown-entries-in-sector-breakdown-](./quick/4-fix-unknown-entries-in-sector-breakdown-/) |
 | 5 | Add Docker containerization with Dockerfile and docker-compose.yml | 2026-02-13 | 3381e21 | — |
+| 6 | Add daily gain/loss to Total Gain/Loss card | 2026-02-13 | 171f50d | [6-add-daily-gain-loss-with-the-total-gain](./quick/6-add-daily-gain-loss-with-the-total-gain/) |
 
 ## Session Continuity
 
 **Last session:** 2026-02-13
-**Stopped at:** Completed quick-5 (Docker containerization)
+**Stopped at:** Completed quick-6 (Daily gain/loss display)
 **Next step:** `/gsd:new-milestone` to plan next version
 **Resume:** None
 
 ---
 
 *State initialized: 2026-02-09 (v1.0)*
-*Updated: 2026-02-13 (quick-4 complete)*
+*Updated: 2026-02-13 (quick-6 complete)*
