@@ -24,5 +24,9 @@ COPY . .
 # Ensure db directory exists and is writable
 RUN mkdir -p db && chown -R www-data:www-data db
 
-# Apache serves from /var/www/html by default — matches our structure
+# Add entrypoint that hashes plaintext password at startup
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 EXPOSE 80
+ENTRYPOINT ["docker-entrypoint.sh"]
