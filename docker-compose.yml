@@ -6,7 +6,7 @@ services:
     volumes:
       - stockd-db:/var/www/html/db
     environment:
-      - AUTH_PASSWORD_HASH=${AUTH_PASSWORD_HASH}
+      - AUTH_PASSWORD_HASH
     restart: unless-stopped
 
 volumes:
