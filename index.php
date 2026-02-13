@@ -2676,7 +2676,7 @@ requireAuth();
                 },
 
                 get portfolioDayChange() {
-                    const holdings = this.stocks.filter(s => !s.is_watchlist && s.quote?.changes?.day && s.shares && s.quote.instrumentType !== 'MUTUALFUND');
+                    const holdings = this.stocks.filter(s => !s.is_watchlist && s.quote?.changes?.day && s.shares && s.account !== 'Fidelity BIOWORLD');
                     if (holdings.length === 0) return null;
 
                     let totalPrevValue = 0;
@@ -2695,7 +2695,7 @@ requireAuth();
                 },
 
                 get portfolioDayChangeDollar() {
-                    const holdings = this.stocks.filter(s => !s.is_watchlist && s.quote?.changes?.day && s.shares && s.quote.instrumentType !== 'MUTUALFUND');
+                    const holdings = this.stocks.filter(s => !s.is_watchlist && s.quote?.changes?.day && s.shares && s.account !== 'Fidelity BIOWORLD');
                     if (holdings.length === 0) return null;
                     let totalDayChange = 0;
                     holdings.forEach(s => {
