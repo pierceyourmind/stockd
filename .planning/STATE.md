@@ -60,15 +60,16 @@ None — between milestones.
 | 1 | Aggregate duplicate symbols in allocation chart | 2026-02-11 | fb79ee5 | [1-make-allocation-by-stock-chart-combine-s](./quick/1-make-allocation-by-stock-chart-combine-s/) |
 | 2 | Show percentage beside stock labels in allocation chart | 2026-02-11 | abf988c | — |
 | 3 | Portfolio dividend income aggregation by year/month | 2026-02-11 | c4538cc | [3-add-total-dividends-gained-per-month-and](./quick/3-add-total-dividends-gained-per-month-and/) |
+| 4 | Fix Unknown sectors and Other asset classes in allocation charts | 2026-02-13 | e37053a | [4-fix-unknown-entries-in-sector-breakdown-](./quick/4-fix-unknown-entries-in-sector-breakdown-/) |
 
 ## Session Continuity
 
-**Last session:** 2026-02-12
-**Stopped at:** v1.2 milestone archived
+**Last session:** 2026-02-13
+**Stopped at:** Completed quick-4 (fix Unknown sectors/Other asset classes)
 **Next step:** `/gsd:new-milestone` to plan next version
 **Resume:** None
 
 ---
 
 *State initialized: 2026-02-09 (v1.0)*
-*Updated: 2026-02-12 (v1.2 milestone complete)*
+*Updated: 2026-02-13 (quick-4 complete)*
