@@ -119,6 +119,7 @@ function getQuote(): never {
             'previousClose' => round($previousClose, 2),
             'currency' => $meta['currency'] ?? 'USD',
             'marketState' => $meta['marketState'] ?? 'CLOSED',
+            'instrumentType' => $meta['instrumentType'] ?? null,
             'changes' => $changes,
             // Additional data points
             'fiftyTwoWeekHigh' => $fiftyTwoWeekHigh ? round($fiftyTwoWeekHigh, 2) : null,
