@@ -538,6 +538,14 @@ requireAuth();
         .summary-card .value.profit { color: var(--green); }
         .summary-card .value.loss { color: var(--red); }
 
+        .summary-card .day-change {
+            font-size: 0.85rem;
+            margin-top: 4px;
+            opacity: 0.85;
+        }
+        .summary-card .day-change.profit { color: var(--green); }
+        .summary-card .day-change.loss { color: var(--red); }
+
         /* Portfolio Charts Section */
         .portfolio-charts {
             display: grid;
@@ -1581,6 +1589,12 @@ requireAuth();
                 <label>Total Gain/Loss</label>
                 <div class="value" :class="totalGain >= 0 ? 'profit' : 'loss'"
                      x-text="(totalGain >= 0 ? '+' : '') + '$' + totalGain.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})"></div>
+                <div class="day-change" x-show="portfolioDayChangeDollar != null"
+                     :class="portfolioDayChangeDollar >= 0 ? 'profit' : 'loss'">
+                    <span x-text="(portfolioDayChangeDollar >= 0 ? '+$' : '-$') + Math.abs(portfolioDayChangeDollar).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})"></span>
+                    <span x-text="'(' + (portfolioDayChange >= 0 ? '+' : '') + portfolioDayChange + '%)'"></span>
+                    today
+                </div>
             </div>
             <div class="summary-card">
                 <label>Stocks Tracked</label>
@@ -2678,6 +2692,18 @@ requireAuth();
 
                     if (totalPrevValue === 0) return null;
                     return ((totalCurrentValue - totalPrevValue) / totalPrevValue * 100).toFixed(2);
+                },
+
+                get portfolioDayChangeDollar() {
+                    const holdings = this.stocks.filter(s => !s.is_watchlist && s.quote?.changes?.day && s.shares);
+                    if (holdings.length === 0) return null;
+                    let totalDayChange = 0;
+                    holdings.forEach(s => {
+                        const shares = parseFloat(s.shares);
+                        const dayChange = s.quote.changes.day.change; // per-share dollar change
+                        totalDayChange += dayChange * shares;
+                    });
+                    return totalDayChange;
                 },
 
                 async init() {
